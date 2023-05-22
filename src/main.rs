@@ -1,7 +1,8 @@
+use namada::types::chain::ChainId;
 use tendermint_rpc::HttpClient;
 use tendermint_config::net::Address as TendermintAddress;
 use std::str::FromStr;
-use namada::ledger::{tx, masp};
+use namada::ledger::{tx, masp, rpc};
 use namada::ledger::wallet::SdkWalletUtils;
 use namada::ledger::args;
 use std::path::PathBuf;
@@ -20,9 +21,7 @@ use std::fs::OpenOptions;
 use std::io::Read;
 use std::io::Write;
 
-
-
-use namada::types::key::common::SecretKey;
+use namada::types::key::common::{SecretKey, PublicKey};
 
 /// Shielded context file name
 const FILE_NAME: &str = "shielded.dat";
@@ -138,53 +137,88 @@ async fn main() -> std::io::Result<()> {
         Path::new("wallet.toml").to_path_buf(),
         Store::default(),
     );
-
+    println!("stuff");
     // Namada native token
+    // let native_token = Address::from_str("atest1v4ehgw36x3prswzxggunzv6pxqmnvdj9xvcyzvpsggeyvs3cg9qnywf589qnwvfsg5erg3fkl09rg5")
+    //     .expect("Unable to construct native token");
+    // // Address of the faucet
+    // let faucet_addr = Address::from_str("atest1v4ehgw36x4pngsfc8y6rzdjyx5c5vdzzgcerxd3exyuyzdfjgcerzv2rgyengs33gdq5xw2rmr7s5u")
+    //     .expect("Unable to construct source");
+    // let target_addr = Address::from_str("atest1v4ehgw36xeprxvjpgycnssf3xcenqvpjgyur2djx8pprzdj9x565gdjy8ycyxvf4x3qns3fney8mtj").expect("stuff");
+    // // Key to withdraw funds from the faucet
+    // let target_key = SecretKey::from_str("00c4ed3c491c56030cbb406f943b4f50261b4eda7b642fb9eb76323ef2b80feb8a").expect("Invalid secret key");
+    // // Construct out shielding transaction
+    // let transfer_tx = args::TxTransfer {
+    //     amount: 23000000.into(),
+    //     native_token: native_token.clone(),
+    //     source: TransferSource::Address(target_addr.clone()),
+    //     target: TransferTarget::Address(faucet_addr.clone()),
+    //     token: native_token.clone(),
+    //     sub_prefix: None,
+    //     tx_code_path: vec![],
+    //     tx: args::Tx {
+    //         dry_run: false,
+    //         dump_tx: false,
+    //         force: false,
+    //         broadcast_only: false,
+    //         ledger_address: (),
+    //         initialized_account_alias: None,
+    //         wallet_alias_force: false,
+    //         fee_amount: 0.into(),
+    //         fee_token: native_token,
+    //         gas_limit: 0.into(),
+    //         expiration: None,
+    //         chain_id: None,
+    //         signing_key: Some(target_key),
+    //         signer: None,
+    //         tx_code_path: vec![],
+    //         password: None,
+    //     },
+    // };
+
     let native_token = Address::from_str("atest1v4ehgw36x3prswzxggunzv6pxqmnvdj9xvcyzvpsggeyvs3cg9qnywf589qnwvfsg5erg3fkl09rg5")
         .expect("Unable to construct native token");
-    // Address of the faucet
-    let faucet_addr = Address::from_str("atest1v4ehgw36g9rygd6xgs65ydpsg9qnsv3sxuungwp5xaqnv333xu65gdfexcmng3fkgfryy3psdxyc4w")
-        .expect("Unable to construct source");
-    let target_addr = Address::from_str("").expect("Unable to construct target");
+    let target_addr = Address::from_str("atest1v4ehgw36xeprxvjpgycnssf3xcenqvpjgyur2djx8pprzdj9x565gdjy8ycyxvf4x3qns3fney8mtj").expect("stuff");
     // Key to withdraw funds from the faucet
-    let faucet_key = SecretKey::from_str("001c1002a48ba1075e2602028697c2bdf182e07636927f399b22ca99e07f92e04a").expect("Invalid secret key");
-    // Construct out shielding transaction
-    let transfer_tx = args::TxTransfer {
-        amount: 23000000.into(),
-        native_token: native_token.clone(),
-        source: TransferSource::Address(faucet_addr.clone()),
-        target: TransferTarget::Address(target_addr.clone()),
-        token: native_token.clone(),
-        sub_prefix: None,
-        tx_code_path: vec![],
+    let target_key = SecretKey::from_str("00c4ed3c491c56030cbb406f943b4f50261b4eda7b642fb9eb76323ef2b80feb8a").expect("Invalid secret key");
+    let pub_key = PublicKey::from_str("00478117b44415df4546e533f56e6ab5f9f033de158417c5a4b23bae496e3eaa57").unwrap();
+
+    let transfer_tx = args::TxInitAccount {
+        source: target_addr.clone(),
+        vp_code: std::fs::read(PathBuf::from("wasm/vp_user.bf4688574c26db2e2d55fa033a2d6a98f8c13c03dcaeaefbbb9bd59589187881.wasm")).unwrap(),
+        vp_code_path: "vp_user.wasm".to_string().into_bytes(),
+        tx_code_path: std::fs::read(PathBuf::from("wasm/tx_init_account.c867276c833b39cbe0da42ef09e84c4288c4a9e42f52446eaaa0cca5d3f16f89.wasm")).unwrap(),
+        public_key: pub_key, 
         tx: args::Tx {
             dry_run: false,
             dump_tx: false,
             force: false,
             broadcast_only: false,
             ledger_address: (),
-            initialized_account_alias: None,
+            initialized_account_alias: Some("test".to_owned()),
             wallet_alias_force: false,
             fee_amount: 0.into(),
             fee_token: native_token,
             gas_limit: 0.into(),
             expiration: None,
-            chain_id: None,
-            signing_key: Some(faucet_key),
+            chain_id: Some(ChainId::from_str("public-testnet-8.0.b92ef72b820").unwrap()),
+            signing_key: Some(target_key),
             signer: None,
             tx_code_path: vec![],
             password: None,
-        },
+        },    
     };
+
     // Connect to an RPC
-    let addr = TendermintAddress::from_str("127.0.0.1:27657")
+    let addr = TendermintAddress::from_str("127.0.0.1:26757")
         .expect("Unable to connect to RPC");
     let client = HttpClient::new(addr).unwrap();
+    let res = rpc::query_block(&client).await;
+    println!("Results: {:?}", res);
     // Now actually make the shielding transfer
-    let res = tx::submit_transfer::<HttpClient, SdkWalletUtils<PathBuf>, _>(
+    let res = tx::submit_init_account::<HttpClient, SdkWalletUtils<PathBuf>>(
         &client,
         &mut wallet,
-        &mut shielded_ctx,
         transfer_tx,
     ).await;
     println!("Results: {:?}", res);
