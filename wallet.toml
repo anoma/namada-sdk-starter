@@ -1,0 +1,23 @@
+[view_keys]
+
+[spend_keys]
+
+[payment_addrs]
+
+[keys]
+default0 = "unencrypted:00432f662ee93a720f98337b0860da823d49643e28f563c12c1fa730f7c5a27fab"
+default2 = "unencrypted:00e64c3a032201f4e4660c72f3510181a9f2b3aaed75a6171ea96ce685778ec327"
+default1 = "unencrypted:00c24ef8d1652e1750b64d54b4f88e6f4603e7847ec5121a057aa503d52a9720eb"
+
+[addresses]
+default0 = "atest1d9khqw368yeyzsfcxg6nsdjygfzrg3jr8qu5zwfcx5urwvzzgdp5vwzygfqnyd35gce52seksm27nf"
+default0_account = "atest1v4ehgw368qerqv3sxyuyz3zzxgcyxvecgerry333xce5z3fkg4pnj3zxgfqnzd69gsu5gwzra8tcn7"
+default1 = "atest1d9khqw36xu6njvz9xvcryv6ygfzrswfkxumrjvphgsunv335g4pygv6y8qmnzvfnx3pnws33xqzkvu"
+default2 = "atest1d9khqw36gv6yyvf3gscrw3zyxc6yzseexv6nz3zrxqergdfcgcer2sfjgcerwdjzxu6yzven7l5xaw"
+
+[pkhs]
+C4B11D07DD64AC9351DC02458F25A2F276B74A33 = "default2"
+92AA82586DBD4FC89A985870BCCF8DBA264F3EC6 = "default0"
+7590E3023DBD89676907D96F4EBD3D871134C7B1 = "default1"
+
+[address_vp_types]

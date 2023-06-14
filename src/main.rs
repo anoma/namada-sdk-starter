@@ -8,6 +8,8 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::{env, vec};
 
+
+
 use async_trait::async_trait;
 use borsh::BorshDeserialize;
 use borsh::BorshSerialize;
@@ -50,49 +52,55 @@ const DERIVATION_PATH_HARDENED_2: &str = "m/44'/877'/0'/0'/2'";
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
+    let store = wallet::load_or_new(&PathBuf::from("wallet.toml")).unwrap();
     let mut wallet: Wallet<SdkWalletUtils> =
-        Wallet::new(PathBuf::from("wallet.toml"), Store::default());
-    let mnemonic = Mnemonic::from_phrase(MNEMONIC_CODE, namada::bip39::Language::English).unwrap();
-    let seed = Seed::new(&mnemonic, "");
-    let (key_alias_0, _) = wallet
-        .gen_and_store_key(
-            SchemeType::Ed25519,
-            Some("default0".to_owned()),
-            true,
-            Some((
-                seed.clone(),
-                DerivationPath::from_path_str(SchemeType::Ed25519, DERIVATION_PATH_HARDENED_0)
-                    .unwrap(),
-            )),
-            None,
-        )
-        .unwrap();
-    let (key_alias_1, _) = wallet
-        .gen_and_store_key(
-            SchemeType::Ed25519,
-            Some("default1".to_owned()),
-            true,
-            Some((
-                seed.clone(),
-                DerivationPath::from_path_str(SchemeType::Ed25519, DERIVATION_PATH_HARDENED_1)
-                    .unwrap(),
-            )),
-            None,
-        )
-        .unwrap();
-    let (key_alias_2, _) = wallet
-        .gen_and_store_key(
-            SchemeType::Ed25519,
-            Some("default2".to_owned()),
-            true,
-            Some((
-                seed.clone(),
-                DerivationPath::from_path_str(SchemeType::Ed25519, DERIVATION_PATH_HARDENED_2)
-                    .unwrap(),
-            )),
-            None,
-        )
-        .unwrap();
+        Wallet::new(PathBuf::from("wallet.toml"), store);
+    // let mnemonic = Mnemonic::from_phrase(MNEMONIC_CODE, namada::bip39::Language::English).unwrap();
+    // let seed = Seed::new(&mnemonic, "");
+    // let (key_alias_0, _) = wallet
+    //     .gen_and_store_key(
+    //         SchemeType::Ed25519,
+    //         Some("default0".to_owned()),
+    //         false,
+    //         Some((
+    //             seed.clone(),
+    //             DerivationPath::from_path_str(SchemeType::Ed25519, DERIVATION_PATH_HARDENED_0)
+    //                 .unwrap(),
+    //         )),
+    //         None,
+    //     )
+    //     .unwrap();
+    // let (key_alias_1, _) = wallet
+    //     .gen_and_store_key(
+    //         SchemeType::Ed25519,
+    //         Some("default1".to_owned()),
+    //         false,
+    //         Some((
+    //             seed.clone(),
+    //             DerivationPath::from_path_str(SchemeType::Ed25519, DERIVATION_PATH_HARDENED_1)
+    //                 .unwrap(),
+    //         )),
+    //         None,
+    //     )
+    //     .unwrap();
+    // let (key_alias_2, _) = wallet
+    //     .gen_and_store_key(
+    //         SchemeType::Ed25519,
+    //         Some("default2".to_owned()),
+    //         false,
+    //         Some((
+    //             seed.clone(),
+    //             DerivationPath::from_path_str(SchemeType::Ed25519, DERIVATION_PATH_HARDENED_2)
+    //                 .unwrap(),
+    //         )),
+    //         None,
+    //     )
+    //     .unwrap();
+    // wallet::save(wallet.store(), wallet.store_dir()).unwrap();
+
+    let key_alias_0 = "default0".to_owned();
+    let key_alias_1 = "default1".to_owned();
+    let key_alias_2 = "default2".to_owned();
 
     println!(
         "Alias: {:?} :: Address: {:?}",
@@ -114,66 +122,95 @@ async fn main() -> std::io::Result<()> {
     .expect("Unable to construct native token");
     let faucet = Address::from_str("atest1v4ehgw36xq6n2djzxv6nqv3eg4py23p3xvcngsecg5myv33kxyensve4xqcr2sfhgdpnqdpkwmgury").expect("Should work");
     let chain_id = ChainId::from_str("namada-test.59284c8c3b468a5731").unwrap();
-    // let source_private_key = SecretKey::from_str("00c4ed3c491c56030cbb406f943b4f50261b4eda7b642fb9eb76323ef2b80feb8a").expect("Invalid secret key");
-    // let source_addr = Address::from_str("atest1v4ehgw36xeprxvjpgycnssf3xcenqvpjgyur2djx8pprzdj9x565gdjy8ycyxvf4x3qns3fney8mtj").expect("stuff");
-    // let source_pub_key = PublicKey::from_str("00478117b44415df4546e533f56e6ab5f9f033de158417c5a4b23bae496e3eaa57").unwrap();
 
-    let init_tx = args::TxInitAccount {
-        tx: args::Tx {
-            dry_run: false,
-            dump_tx: false,
-            force: false,
-            broadcast_only: false,
-            ledger_address: (),
-            initialized_account_alias: Some("default0_account".to_owned()),
-            wallet_alias_force: false,
-            fee_amount: 0.into(),
-            fee_token: native_token.clone(),
-            gas_limit: 0.into(),
-            expiration: None,
-            chain_id: Some(chain_id.clone()),
-            signing_key: Some(wallet.find_key(&key_alias_0, Some(Zeroizing::new("".to_owned()))).unwrap()),
-            signer: None,
-            tx_reveal_code_path: PathBuf::from("tx_reveal_pk.wasm"),
-            password: None,
-        },
-        source: wallet.find_address(&key_alias_0).unwrap().clone(),
-        vp_code_path: PathBuf::from("vp_user.wasm"),
-        tx_code_path: PathBuf::from("tx_init_account.wasm"),
-        public_key: wallet.find_key(&key_alias_0, Some(Zeroizing::new("".to_owned()))).unwrap().clone().to_public(),
-    };
+    // let init_tx = args::TxInitAccount {
+    //     tx: args::Tx {
+    //         dry_run: false,
+    //         dump_tx: false,
+    //         force: false,
+    //         broadcast_only: false,
+    //         ledger_address: (),
+    //         initialized_account_alias: Some("default0_account".to_owned()),
+    //         wallet_alias_force: false,
+    //         fee_amount: 0.into(),
+    //         fee_token: native_token.clone(),
+    //         gas_limit: 0.into(),
+    //         expiration: None,
+    //         chain_id: Some(chain_id.clone()),
+    //         signing_key: Some(wallet.find_key(&key_alias_0, Some(Zeroizing::new("".to_owned()))).unwrap()),
+    //         signer: None,
+    //         tx_reveal_code_path: PathBuf::from("tx_reveal_pk.wasm"),
+    //         password: None,
+    //     },
+    //     source: wallet.find_address(&key_alias_0).unwrap().clone(),
+    //     vp_code_path: PathBuf::from("vp_user.wasm"),
+    //     tx_code_path: PathBuf::from("tx_init_account.wasm"),
+    //     public_key: wallet.find_key(&key_alias_0, Some(Zeroizing::new("".to_owned()))).unwrap().clone().to_public(),
+    // };
 
     let tendermint_addr = TendermintAddress::from_str("127.0.0.1:27657").expect("Unable to connect to RPC");
     let http_client = HttpClient::new(tendermint_addr).unwrap();
     let block_res = rpc::query_block(&http_client).await;
     println!("Query Block: {:?}", block_res);
 
-    let init_acc_res = tx::submit_init_account(&http_client, &mut wallet, init_tx).await;
-    println!("Tx Result: {:?}", init_acc_res);
+    // let init_acc_res = tx::submit_init_account(&http_client, &mut wallet, init_tx).await;
+    // println!("Tx Result: {:?}", init_acc_res);
 
     let mut shielded_ctx = SdkShieldedUtils::new(Path::new("./").to_path_buf());
 
-    let transfer_tx = args::TxTransfer {
+    // let transfer_tx = args::TxTransfer {
+    //     tx: args::Tx {
+    //         dry_run: false,
+    //         dump_tx: false,
+    //         force: false,
+    //         broadcast_only: false,
+    //         ledger_address: (),
+    //         initialized_account_alias: Some("default1_account".to_owned()),
+    //         wallet_alias_force: false,
+    //         fee_amount: 0.into(),
+    //         fee_token: native_token.clone(),
+    //         gas_limit: 0.into(),
+    //         expiration: None,
+    //         chain_id: Some(chain_id.clone()),
+    //         signing_key: Some(wallet.find_key(&key_alias_1, Some(Zeroizing::new("".to_owned()))).unwrap()),
+    //         signer: None,
+    //         tx_reveal_code_path: PathBuf::from("tx_reveal_pk.wasm"),
+    //         password: None,
+    //     },
+    //     source: TransferSource::Address(faucet),
+    //     target: TransferTarget::Address(wallet.find_address(&key_alias_1).unwrap().clone()),
+    //     token: native_token.clone(),
+    //     sub_prefix: None,
+    //     amount: 44485342.into(),
+    //     native_token: native_token.clone(),
+    //     tx_code_path: PathBuf::from("tx_transfer.wasm"),
+    // };
+
+    let balance_res = rpc::get_token_balance(&http_client, &native_token, wallet.find_address(&key_alias_1).unwrap()).await;
+    println!("Balance {:?}", balance_res);
+
+    let transfer_tx_to_2 = args::TxTransfer {
         tx: args::Tx {
             dry_run: false,
             dump_tx: false,
             force: false,
             broadcast_only: false,
             ledger_address: (),
-            initialized_account_alias: Some("test".to_owned()),
+            initialized_account_alias: None,
             wallet_alias_force: false,
             fee_amount: 0.into(),
             fee_token: native_token.clone(),
             gas_limit: 0.into(),
             expiration: None,
             chain_id: Some(chain_id.clone()),
-            signing_key: Some(wallet.find_key(&key_alias_1, Some(Zeroizing::new("".to_owned()))).unwrap()),
-            signer: None,
+            // signing_key: Some(wallet.find_key(&key_alias_1, Some(Zeroizing::new("".to_owned()))).unwrap()),
+            signing_key: None,
+            signer: Some(Address::from(wallet.find_address(&key_alias_1).unwrap().clone())),
             tx_reveal_code_path: PathBuf::from("tx_reveal_pk.wasm"),
-            password: None,
+            password: Some(Zeroizing::new("".to_owned())),
         },
-        source: TransferSource::Address(faucet),
-        target: TransferTarget::Address(wallet.find_address(&key_alias_0).unwrap().clone()),
+        source: TransferSource::Address(wallet.find_address(&key_alias_1).unwrap().clone()),
+        target: TransferTarget::Address(wallet.find_address(&key_alias_2).unwrap().clone()),
         token: native_token.clone(),
         sub_prefix: None,
         amount: 4.into(),
@@ -181,10 +218,85 @@ async fn main() -> std::io::Result<()> {
         tx_code_path: PathBuf::from("tx_transfer.wasm"),
     };
 
-    let transfer_tx_res = tx::submit_transfer(&http_client, &mut wallet, &mut shielded_ctx, transfer_tx).await;
+    let transfer_tx_res = tx::submit_transfer(&http_client, &mut wallet, &mut shielded_ctx, transfer_tx_to_2).await;
     println!("Tx Result: {:?}", transfer_tx_res);
 
+    wallet::save(wallet.store(), wallet.store_dir()).unwrap();
+
     Ok(())
+}
+
+mod wallet {
+    use std::{path::PathBuf, fs};
+    use std::io::prelude::*;
+
+    use file_lock::{FileOptions, FileLock};
+    use namada::ledger::wallet::Store;
+    use thiserror::Error;
+
+    #[derive(Error, Debug)]
+    pub enum LoadStoreError {
+        #[error("Failed decoding the wallet store: {0}")]
+        Decode(toml::de::Error),
+        #[error("Failed to read the wallet store from {0}: {1}")]
+        ReadWallet(String, String),
+        #[error("Failed to write the wallet store: {0}")]
+        StoreNewWallet(String),
+    }
+
+    // /// Get the path to the wallet store.
+    // pub fn wallet_file(store_dir: impl AsRef<Path>) -> PathBuf {
+    //     store_dir.as_ref().join(FILE_NAME)
+    // }
+
+    /// Save the wallet store to a file.
+    pub fn save(store: &Store, store_dir: &PathBuf) -> std::io::Result<()> {
+        let data = store.encode();
+        // let wallet_path = wallet_file(store_dir);
+        // Make sure the dir exists
+        let wallet_dir = store_dir.parent().unwrap();
+        fs::create_dir_all(wallet_dir)?;
+        // Write the file
+        let options = FileOptions::new().create(true).write(true).truncate(true);
+        let mut filelock =
+            FileLock::lock(store_dir, true, options)?;
+        filelock.file.write_all(&data)
+    }
+
+    /// Load the store file or create a new one without any keys or addresses.
+    pub fn load_or_new(store_dir: &PathBuf) -> Result<Store, LoadStoreError> {
+        load(store_dir).or_else(|_| {
+            let store = Store::default();
+            save(&store, store_dir)
+                .map_err(|err| LoadStoreError::StoreNewWallet(err.to_string()))?;
+            Ok(store)
+        })
+    }
+
+    /// Attempt to load the store file.
+    pub fn load(store_dir: &PathBuf) -> Result<Store, LoadStoreError> {
+        // let wallet_file = wallet_file(store_dir);
+        match FileLock::lock(
+            store_dir,
+            true,
+            FileOptions::new().read(true).write(false),
+        ) {
+            Ok(mut filelock) => {
+                let mut store = Vec::<u8>::new();
+                filelock.file.read_to_end(&mut store).map_err(|err| {
+                    LoadStoreError::ReadWallet(
+                        store_dir.to_str().unwrap().parse().unwrap(),
+                        err.to_string(),
+                    )
+                })?;
+                Store::decode(store).map_err(LoadStoreError::Decode)
+            }
+            Err(err) => Err(LoadStoreError::ReadWallet(
+                store_dir.to_string_lossy().into_owned(),
+                err.to_string(),
+            )),
+        }
+    }
 }
 
 /// A degenerate implementation of wallet interactivity

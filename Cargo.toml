@@ -21,6 +21,8 @@ rand = {version = "0.8", default-features = false}
 rand_core = {version = "0.6", default-features = false}
 zeroize = "1.5.5"
 file-lock = "2.0.2"
+thiserror = "1.0.38"
+toml = "0.5.8"
 
 [patch.crates-io]
 # TODO temp patch for <https://github.com/near/borsh-rs/issues/82>, <https://github.com/near/borsh-rs/issues/84> and more tba.
