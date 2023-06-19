@@ -1,5 +1,5 @@
 FROM rust:1.65.0-slim-buster AS namada-builder
-ARG BRANCH=v0.16.0
+ARG BRANCH=adrian/fix_cors
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y \
@@ -107,6 +107,8 @@ RUN rm /home/namada/genesis/e2e-tests-single-node.toml
 COPY e2e-tests-single-node.toml /home/namada/genesis
 COPY --chown=namada:namada --chmod=0755 setup-namada.sh /home/namada
 COPY --chown=namada:namada --chmod=0755 run-namada.sh /home/namada
+
+#ENV NAMADA_LEDGER__TENDERMINT__TENDERMINT__RPC_CORS_ALLOWED_ORIGINS=["*"]
 
 RUN ./home/namada/setup-namada.sh
 

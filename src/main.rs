@@ -57,7 +57,7 @@ async fn main() -> std::io::Result<()> {
     let mut wallet: Wallet<SdkWalletUtils> =
         Wallet::new(PathBuf::from("wallet.toml"), store);
 
-    wallet.gen_spending_key("sdefault0".to_owned(), Some(Zeroizing::new("sdefault0".to_owned())), false);
+    // wallet.gen_spending_key("sdefault0".to_owned(), Some(Zeroizing::new("sdefault0".to_owned())), false);
     wallet::save(wallet.store(), wallet.store_dir()).unwrap();
 
     // let mnemonic = Mnemonic::from_phrase(MNEMONIC_CODE, namada::bip39::Language::English).unwrap();
@@ -107,46 +107,49 @@ async fn main() -> std::io::Result<()> {
     let key_alias_1 = "default1".to_owned();
     let key_alias_2 = "default2".to_owned();
     let shielded_key_alias_0 = "sdefault0".to_owned();
-    let viewing_key = wallet.find_viewing_key(shielded_key_alias_0.clone()).unwrap().clone();
+    let shielded_key_alias_1 = "sdefault1".to_owned();
 
-    let (_, payment_addr) = wallet.gen_payment_addr(shielded_key_alias_0.clone(), false, false, viewing_key);
+    wallet.gen_spending_key(shielded_key_alias_1.clone(), Some(Zeroizing::new("sdefault1".to_owned())), false);
+    let viewing_key = wallet.find_viewing_key(shielded_key_alias_1.clone()).unwrap().clone();
+
+    let (_, payment_addr) = wallet.gen_payment_addr(shielded_key_alias_1.clone(), false, false, viewing_key);
     wallet::save(wallet.store(), wallet.store_dir()).unwrap();
 
-    // println!(
-    //     "Alias: {:?} :: Address: {:?}",
-    //     &key_alias_0,
-    //     wallet.find_address(&key_alias_0).unwrap()
-    // );
-    // println!(
-    //     "Alias: {:?} :: Address: {:?}",
-    //     &key_alias_1,
-    //     wallet.find_address(&key_alias_1).unwrap()
-    // );
-    // println!(
-    //     "Alias: {:?} :: Address: {:?}",
-    //     &key_alias_2,
-    //     wallet.find_address(&key_alias_2).unwrap()
-    // );
-    // println!(
-    //     "Alias: {:?} :: Address: {:?}",
-    //     &shielded_key_alias_0,
-    //     wallet.find_payment_addr(&shielded_key_alias_0).unwrap()
-    // );
-    // println!(
-    //     "Alias: {:?} :: Address: {:?}",
-    //     &shielded_key_alias_0,
-    //     &viewing_key
-    // );
-    // println!(
-    //     "Alias: {:?} :: Address: {:?}",
-    //     &shielded_key_alias_0,
-    //     wallet.find_spending_key(&shielded_key_alias_0, Some(Zeroizing::new("sdefault0".to_owned())))
-    // );
+    println!(
+        "Alias: {:?} :: Address: {:?}",
+        &key_alias_0,
+        wallet.find_address(&key_alias_0).unwrap()
+    );
+    println!(
+        "Alias: {:?} :: Address: {:?}",
+        &key_alias_1,
+        wallet.find_address(&key_alias_1).unwrap()
+    );
+    println!(
+        "Alias: {:?} :: Address: {:?}",
+        &key_alias_2,
+        wallet.find_address(&key_alias_2).unwrap()
+    );
+    println!(
+        "Alias: {:?} :: Address: {:?}",
+        &shielded_key_alias_0,
+        wallet.find_payment_addr(&shielded_key_alias_0).unwrap()
+    );
+    println!(
+        "Alias: {:?} :: Address: {:?}",
+        &shielded_key_alias_0,
+        &viewing_key
+    );
+    println!(
+        "Alias: {:?} :: Address: {:?}",
+        &shielded_key_alias_0,
+        wallet.find_spending_key(&shielded_key_alias_0, Some(Zeroizing::new("sdefault0".to_owned())))
+    );
 
     let native_token = Address::from_str("atest1v4ehgw36x3prswzxggunzv6pxqmnvdj9xvcyzvpsggeyvs3cg9qnywf589qnwvfsg5erg3fkl09rg5")
     .expect("Unable to construct native token");
-    let faucet = Address::from_str("atest1v4ehgw36gdzngvp5g3q5xvpexsuygvzyxsmyz3psxdqnzde4xscrg3pkgdz5gvfsxyenzd292jthnl").expect("Should work");
-    let chain_id = ChainId::from_str("namada-test.46fe356079798c1689").unwrap();
+    let faucet = Address::from_str("atest1v4ehgw36xvmrvd6rxcunzv3kxsensvf5gyenxs3s8yc5ysesxaz5z3zxgfpnvwphggurj32p3cxxvf").expect("Should work");
+    let chain_id = ChainId::from_str("namada-test.0230fa1d7b812f4bf5").unwrap();
 
     // let init_tx = args::TxInitAccount {
     //     tx: args::Tx {
@@ -246,37 +249,45 @@ async fn main() -> std::io::Result<()> {
     //     tx_code_path: PathBuf::from("tx_transfer.wasm"),
     // };
 
-    // let transfer_tx_to_shielded = args::TxTransfer {
-    //     tx: args::Tx {
-    //         dry_run: false,
-    //         dump_tx: false,
-    //         force: false,
-    //         broadcast_only: false,
-    //         ledger_address: (),
-    //         initialized_account_alias: None,
-    //         wallet_alias_force: false,
-    //         fee_amount: 0.into(),
-    //         fee_token: native_token.clone(),
-    //         gas_limit: 0.into(),
-    //         expiration: None,
-    //         chain_id: Some(chain_id.clone()),
-    //         // signing_key: Some(wallet.find_key(&key_alias_1, Some(Zeroizing::new("".to_owned()))).unwrap()),
-    //         signing_key: None,
-    //         signer: Some(Address::from(wallet.find_address(&key_alias_1).unwrap().clone())),
-    //         tx_reveal_code_path: PathBuf::from("tx_reveal_pk.wasm"),
-    //         password: Some(Zeroizing::new("".to_owned())),
-    //     },
-    //     source: TransferSource::Address(wallet.find_address(&key_alias_1).unwrap().clone()),
-    //     target: TransferTarget::PaymentAddress(payment_addr),
-    //     token: native_token.clone(),
-    //     sub_prefix: None,
-    //     amount: 5.into(),
-    //     native_token: native_token.clone(),
-    //     tx_code_path: PathBuf::from("tx_transfer.wasm"),
-    // };
+    // let payment_addr = wallet.find_payment_addr(shielded_key_alias_1.clone()).unwrap();
+    println!(
+        "Alias: {:?} :: Address: {:?}",
+        &shielded_key_alias_1,
+        payment_addr.clone()
+    );
 
-    // let transfer_tx_res = tx::submit_transfer(&http_client, &mut wallet, &mut shielded_ctx, transfer_tx_to_shielded).await;
-    // println!("Tx Result: {:?}", transfer_tx_res);
+    let transfer_tx_to_shielded = args::TxTransfer {
+        tx: args::Tx {
+            dry_run: false,
+            dump_tx: false,
+            force: false,
+            broadcast_only: false,
+            ledger_address: (),
+            initialized_account_alias: None,
+            wallet_alias_force: false,
+            fee_amount: 0.into(),
+            fee_token: native_token.clone(),
+            gas_limit: 0.into(),
+            expiration: None,
+            chain_id: Some(chain_id.clone()),
+            // signing_key: Some(wallet.find_key(&key_alias_1, Some(Zeroizing::new("".to_owned()))).unwrap()),
+            signing_key: None,
+            signer: Some(Address::from(wallet.find_address(&key_alias_1).unwrap().clone())),
+            // signer: None,
+            tx_reveal_code_path: PathBuf::from("tx_reveal_pk.wasm"),
+            password: Some(Zeroizing::new("".to_owned())),
+        },
+        source: TransferSource::ExtendedSpendingKey(wallet.find_spending_key(&shielded_key_alias_0, Some(Zeroizing::new("sdefault0".to_owned()))).unwrap()),
+        target: TransferTarget::PaymentAddress(payment_addr.clone()),
+        token: native_token.clone(),
+        sub_prefix: None,
+        amount: 77.into(),
+        native_token: native_token.clone(),
+        tx_code_path: PathBuf::from("tx_transfer.wasm"),
+    };
+
+    let transfer_tx_res = tx::submit_transfer(&http_client, &mut wallet, &mut shielded_ctx, transfer_tx_to_shielded).await;
+    println!("Tx Result: {:?}", transfer_tx_res);
 
     wallet::save(wallet.store(), wallet.store_dir()).unwrap();
 
