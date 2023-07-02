@@ -6,23 +6,22 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-getrandom = { version = "0.2" }
+async-std = "1.11.0"
 async-trait = "0.1.51"
-async-std = {version = "=1.11.0", features = ["unstable"]}
 borsh = "0.9.0"
-# namada = { git = "https://github.com/anoma/namada", rev="a5bad396992e5f66351088bde3bec73d83e769ba", default-features = false, features = ["abciplus", "namada-sdk"] }
+file-lock = "2.0.2"
+getrandom = { version = "0.2" }
+masp_primitives = { git = "https://github.com/anoma/masp.git", rev = "cfea8c95d3f73077ca3e25380fd27e5b46e828fd" }
+masp_proofs = { git = "https://github.com/anoma/masp.git", rev = "cfea8c95d3f73077ca3e25380fd27e5b46e828fd", features = ["download-params"]}
 namada = { path = "../namada/shared", default-features = false, features = ["abciplus", "namada-sdk"] }
-tendermint-config = {git="https://github.com/heliaxdev/tendermint-rs.git", rev="02b256829e80f8cfecf3fa0d625c2a76c79cd043"}
-tendermint-rpc = {git="https://github.com/heliaxdev/tendermint-rs.git", rev="02b256829e80f8cfecf3fa0d625c2a76c79cd043", features = ["http-client"], default-features = false}
-tokio = {version = "1.26.0", features = ["rt-multi-thread"]}
-masp_primitives = { git = "https://github.com/anoma/masp", rev = "cfea8c95d3f73077ca3e25380fd27e5b46e828fd", features = ["transparent-inputs"] }
-masp_proofs = { git = "https://github.com/anoma/masp", rev = "cfea8c95d3f73077ca3e25380fd27e5b46e828fd", features = ["bundled-prover", "download-params"]}
 rand = {version = "0.8", default-features = false}
 rand_core = {version = "0.6", default-features = false}
-zeroize = "1.5.5"
-file-lock = "2.0.2"
+tendermint-config = {git="https://github.com/heliaxdev/tendermint-rs.git", rev="02b256829e80f8cfecf3fa0d625c2a76c79cd043"}
+tendermint-rpc = {git="https://github.com/heliaxdev/tendermint-rs.git", rev="02b256829e80f8cfecf3fa0d625c2a76c79cd043", features = ["http-client"]}
 thiserror = "1.0.38"
+tokio = {version = "1.8.2", default-features = false}
 toml = "0.5.8"
+zeroize = "1.5.5"
 
 [patch.crates-io]
 # TODO temp patch for <https://github.com/near/borsh-rs/issues/82>, <https://github.com/near/borsh-rs/issues/84> and more tba.
@@ -30,21 +29,3 @@ borsh = {git = "https://github.com/heliaxdev/borsh-rs.git", rev = "cd5223e5103c4
 borsh-derive = {git = "https://github.com/heliaxdev/borsh-rs.git", rev = "cd5223e5103c4f139e0c54cf8259b7ec5ec4073a"}
 borsh-derive-internal = {git = "https://github.com/heliaxdev/borsh-rs.git", rev = "cd5223e5103c4f139e0c54cf8259b7ec5ec4073a"}
 borsh-schema-derive-internal = {git = "https://github.com/heliaxdev/borsh-rs.git", rev = "cd5223e5103c4f139e0c54cf8259b7ec5ec4073a"}
-# The following 3 crates patch a work-around for https://github.com/smol-rs/polling/issues/38 breaking namada tooling build with nightly 2022-05-20
-polling = {git = "https://github.com/heliaxdev/polling.git", rev = "02a655775282879459a3460e2646b60c005bca2c"}
-async-io = {git = "https://github.com/heliaxdev/async-io.git", rev = "9285dad39c9a37ecd0dbd498c5ce5b0e65b02489"}
-async-process = {git = "https://github.com/heliaxdev/async-process.git", rev = "e42c527e87d937da9e01aaeb563c0b948580dc89"}
-
-# patched to a commit on the `eth-bridge-integration+consensus-timeout` branch of our fork
-tendermint = {git="https://github.com/heliaxdev/tendermint-rs.git", rev="02b256829e80f8cfecf3fa0d625c2a76c79cd043"}
-tendermint-config = {git="https://github.com/heliaxdev/tendermint-rs.git", rev="02b256829e80f8cfecf3fa0d625c2a76c79cd043"}
-tendermint-proto = {git="https://github.com/heliaxdev/tendermint-rs.git", rev="02b256829e80f8cfecf3fa0d625c2a76c79cd043"}
-tendermint-rpc = {git="https://github.com/heliaxdev/tendermint-rs.git", rev="02b256829e80f8cfecf3fa0d625c2a76c79cd043"}
-tendermint-light-client-verifier = {git="https://github.com/heliaxdev/tendermint-rs.git", rev="02b256829e80f8cfecf3fa0d625c2a76c79cd043"}
-
-# patched to match 
-ibc = {git = "https://github.com/heliaxdev/cosmos-ibc-rs.git", rev = "e71bc2cc79f8c2b32e970d95312f251398c93d9e"}
-ibc-proto = {git = "https://github.com/heliaxdev/ibc-proto-rs.git", rev = "6f4038fcf4981f1ed70771d1cd89931267f917af"}
-
-# patched to the yanked 1.2.0 until masp updates bitvec
-funty = { git = "https://github.com/bitvecto-rs/funty/", rev = "7ef0d890fbcd8b3def1635ac1a877fc298488446" }
