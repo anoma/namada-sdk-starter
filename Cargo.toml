@@ -12,13 +12,13 @@ borsh = "0.9.0"
 file-lock = "2.0.2"
 futures = "0.3.28"
 getrandom = { version = "0.2" }
-masp_primitives = { git = "https://github.com/anoma/masp.git", rev = "cfea8c95d3f73077ca3e25380fd27e5b46e828fd" }
-masp_proofs = { git = "https://github.com/anoma/masp.git", rev = "cfea8c95d3f73077ca3e25380fd27e5b46e828fd", features = ["download-params"]}
-namada = { path = "../namada/shared", default-features = false, features = ["abciplus", "namada-sdk"] }
+masp_primitives = { git = "https://github.com/anoma/masp.git", rev = "50acc5028fbcd52a05970fe7991c7850ab04358e" }
+masp_proofs = { git = "https://github.com/anoma/masp.git", rev = "50acc5028fbcd52a05970fe7991c7850ab04358e", features = ["download-params"]}
+namada = { git = "https://github.com/anoma/namada.git", rev = "af3a2a8335fea551973f18d72bf7cb8a6d047517", default-features = false, features = ["abciplus", "namada-sdk"] }
 rand = {version = "0.8", default-features = false}
 rand_core = {version = "0.6", default-features = false}
-tendermint-config = {git="https://github.com/heliaxdev/tendermint-rs.git", rev="02b256829e80f8cfecf3fa0d625c2a76c79cd043"}
-tendermint-rpc = {git="https://github.com/heliaxdev/tendermint-rs.git", rev="02b256829e80f8cfecf3fa0d625c2a76c79cd043", features = ["http-client"]}
+tendermint-config = {git="https://github.com/heliaxdev/tendermint-rs.git", rev="b7d1e5afc6f2ccb3fd1545c2174bab1cc48d7fa7"}
+tendermint-rpc = {git="https://github.com/heliaxdev/tendermint-rs.git", rev="b7d1e5afc6f2ccb3fd1545c2174bab1cc48d7fa7", features = ["http-client"]}
 thiserror = "1.0.38"
 tokio = {version = "1.8.2", default-features = false}
 toml = "0.5.8"

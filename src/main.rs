@@ -29,7 +29,6 @@ use namada::ledger::args;
 use namada::ledger::args::TxTransfer;
 use namada::ledger::masp::ShieldedContext;
 use namada::ledger::wallet::alias::Alias;
-use namada::ledger::wallet::derivation_path::DerivationPath;
 use namada::ledger::wallet::Store;
 use namada::ledger::wallet::Wallet;
 use namada::ledger::wallet::{store, GenRestoreKeyError, WalletUtils};
@@ -42,7 +41,13 @@ use namada::types::masp::PaymentAddress;
 use namada::types::masp::TransferSource;
 use namada::types::masp::TransferTarget;
 use namada::types::token::Amount;
-use tokio::join;
+use namada::ledger::NamadaImpl;
+use namada::ledger::Namada;
+use namada::ledger::args::TxBuilder;
+use namada::ledger::tx::ProcessTxResponse;
+use namada::types::token::DenominatedAmount;
+use namada::ledger::args::InputAmount;
+use namada::types::uint::Uint;
 
 /// Shielded context file name
 const FILE_NAME: &str = "shielded.dat";
@@ -54,11 +59,8 @@ const MNEMONIC_CODE: &str = "cruise ball fame lucky fabric govern \
                             foot example shoot dry fuel lawn";
 
 const CHAIN_ID: &str = "public-testnet-10.3718993c3648";
-const NATIVE_TOKEN: &str =
-    "atest1v4ehgw36x3prswzxggunzv6pxqmnvdj9xvcyzvpsggeyvs3cg9qnywf589qnwvfsg5erg3fkl09rg5";
 const FAUCET: &str =
     "atest1v4ehgw36gc6yxvpjxccyzvphxycrxw2xxsuyydesxgcnjs3cg9znwv3cxgmnj32yxy6rssf5tcqjm3";
-
 /*
 
 - generate X number of wallets
@@ -97,28 +99,25 @@ struct Account {
 // - it's NAM balance
 // - check if it's PK has been revealed and if not, reveal it, otherwise reveal them
 // - returns a list of futures with potential revelations that need to be run first and update the account structure - this should only happen on the very first run
-fn gen_accounts(wallet: &mut Wallet<SdkWalletUtils>, size: usize) -> Vec<Account> {
-    let mnemonic = Mnemonic::from_phrase(MNEMONIC_CODE, namada::bip39::Language::English).unwrap();
-    let seed = Seed::new(&mnemonic, "");
+fn gen_accounts<'a>(namada: &mut impl Namada<'a, WalletUtils = SdkWalletUtils>, size: usize) -> Vec<Account> {
     let mut accounts: Vec<Account> = vec![];
 
     for i in 0..size {
         let derivation_path = format!("m/44'/877'/0'/0'/{}'", i);
         let alias = format!("default_{}", i);
-        let (key_alias, sk) = wallet
-            .gen_and_store_key(
+        let (key_alias, sk) = namada
+            .wallet
+            .derive_key_from_user_mnemonic_code(
                 SchemeType::Ed25519,
                 Some(alias),
                 false,
-                Some((
-                    seed.clone(),
-                    DerivationPath::from_path_str(SchemeType::Ed25519, &derivation_path).unwrap(),
-                )),
+                Some(derivation_path),
                 None,
             )
+            .expect("unable to derive key from mnemonic code")
             .unwrap();
         let account = Account {
-            key_alias: key_alias,
+            key_alias,
             public_key: sk.to_public(),
             private_key: sk,
             balance: Amount::from(0),
@@ -126,190 +125,141 @@ fn gen_accounts(wallet: &mut Wallet<SdkWalletUtils>, size: usize) -> Vec<Account
         };
         accounts.push(account);
     }
-    wallet::save(wallet.store(), wallet.store_dir()).unwrap();
+    wallet::save(namada.wallet.store(), namada.wallet.store_dir()).unwrap();
     accounts
 }
 
-async fn update_token_balances(client: &HttpClient, accounts: &mut Vec<Account>) {
+async fn update_token_balances<'a>(
+    namada: &mut impl Namada<'a>,
+    accounts: &mut Vec<Account>,
+) {
     for account in accounts {
-        let amount = rpc::get_token_balance(
-            client,
-            &Address::from_str(NATIVE_TOKEN).unwrap(),
+        account.balance = rpc::get_token_balance(
+            namada.client,
+            &namada.native_token(),
             &Address::from(&account.public_key),
         )
-        .await;
-        if amount.is_none() {
-            account.balance = Amount::from(0);
-        } else {
-            account.balance = amount.unwrap();
-        }
+        .await.expect("unable to query account balance");
     }
 }
 
 /*
    - check if need to reveal and if not, then don't reveal
 */
-async fn reveal_pks(
-    client: &HttpClient,
+async fn reveal_pks<'a>(
+    namada: &mut impl Namada<'a>,
     accounts: &mut Vec<Account>,
-    wallet: &mut Wallet<SdkWalletUtils>,
 ) {
-    let native_token = Address::from_str(NATIVE_TOKEN).unwrap();
-    let chain_id = ChainId::from_str(CHAIN_ID).unwrap();
-
     for mut account in accounts {
-        let reveal_tx = args::RevealPk {
-            tx: args::Tx {
-                dry_run: false,
-                dump_tx: false,
-                force: false,
-                broadcast_only: false,
-                ledger_address: (),
-                initialized_account_alias: None,
-                wallet_alias_force: false,
-                fee_amount: 0.into(),
-                fee_token: native_token.clone(),
-                gas_limit: 0.into(),
-                expiration: None,
-                chain_id: Some(chain_id.clone()),
-                signing_key: Some(account.private_key.clone()),
-                signer: None,
-                tx_reveal_code_path: PathBuf::from("tx_reveal_pk.wasm"),
-                password: None,
-            },
-            public_key: account.public_key.clone(),
-        };
-        let res = tx::submit_reveal_pk(client, wallet, reveal_tx).await;
+        let reveal_tx_builder = namada
+            .new_reveal_pk(account.public_key.clone())
+            .signing_keys(vec![account.private_key.clone()]);
+        let (mut reveal_tx, signing_data, _) = reveal_tx_builder
+            .build(namada)
+            .await
+            .expect("unable to build reveal pk tx");
+        namada.sign(&mut reveal_tx, &reveal_tx_builder.tx, signing_data)
+            .expect("unable to sign reveal pk tx");
+        let res = namada.submit(reveal_tx, &reveal_tx_builder.tx).await;
         if res.is_ok() {
             account.revealed = true;
         }
     }
 }
 
-// impl StdFuture<Output = std::result::Result<(), namada::ledger::tx::Error>>
-fn get_funds_from_faucet<'a>(
-    client: &'a HttpClient,
-    account: &'a Account,
-) -> impl StdFuture<Output = std::result::Result<(), namada::ledger::tx::Error>> + 'a {
+async fn get_funds_from_faucet<'a>(
+    namada: &mut impl Namada<'a>,
+    account: &Account,
+) -> std::result::Result<ProcessTxResponse, namada::types::error::Error> {
     let faucet = Address::from_str(FAUCET).unwrap();
-    let native_token = Address::from_str(NATIVE_TOKEN).unwrap();
-    let chain_id = ChainId::from_str(CHAIN_ID).unwrap();
+    let native_token = namada.native_token();
 
-    let wallet = gen_or_load_wallet(PathBuf::from("wallet.toml"));
-    let shielded_ctx = SdkShieldedUtils::new(Path::new("masp/").to_path_buf());
-
-    let amount = Amount::from(1_000_000_000);
-
-    let transfer_tx = args::TxTransfer {
-        tx: args::Tx {
-            dry_run: false,
-            dump_tx: false,
-            force: false,
-            broadcast_only: false,
-            ledger_address: (),
-            initialized_account_alias: None,
-            wallet_alias_force: false,
-            fee_amount: 0.into(),
-            fee_token: native_token.clone(),
-            gas_limit: 0.into(),
-            expiration: None,
-            chain_id: Some(chain_id.clone()),
-            signing_key: Some(account.private_key.clone()),
-            signer: None,
-            tx_reveal_code_path: PathBuf::from("tx_reveal_pk.wasm"),
-            password: None,
-        },
-        source: TransferSource::Address(faucet.clone()),
-        target: TransferTarget::Address(Address::from(&account.public_key)),
-        token: native_token.clone(),
-        sub_prefix: None,
-        amount: amount,
-        native_token: native_token.clone(),
-        tx_code_path: PathBuf::from("tx_transfer.wasm"),
-    };
-
-    tx::submit_transfer(client, wallet, shielded_ctx, transfer_tx)
+    let mut transfer_tx_builder = namada.new_transfer(
+        TransferSource::Address(faucet.clone()),
+        TransferTarget::Address(Address::from(&account.public_key)),
+        native_token,
+        InputAmount::from_str("1000").unwrap(),
+    )
+        .signing_keys(vec![account.private_key.clone()]);
+    let (mut transfer_tx, signing_data, _epoch) = transfer_tx_builder
+        .build(namada)
+        .await
+        .expect("unable to build transfer");
+    namada.sign(&mut transfer_tx, &transfer_tx_builder.tx, signing_data)
+            .expect("unable to sign reveal pk tx");
+    namada.submit(transfer_tx, &transfer_tx_builder.tx).await
 }
 
-fn gen_transfer<'a>(
-    client: &'a HttpClient,
-    source: &'a Account,
-    destination: &'a Account,
-    amount: Amount,
-) -> impl StdFuture<Output = std::result::Result<(), namada::ledger::tx::Error>> + 'a {
-    let native_token = Address::from_str(NATIVE_TOKEN).unwrap();
-    let chain_id = ChainId::from_str(CHAIN_ID).unwrap();
-
-    let wallet = gen_or_load_wallet(PathBuf::from("wallet.toml"));
-    let shielded_ctx = SdkShieldedUtils::new(Path::new("masp/").to_path_buf());
-
-    let transfer_tx = args::TxTransfer {
-        tx: args::Tx {
-            dry_run: false,
-            dump_tx: false,
-            force: false,
-            broadcast_only: false,
-            ledger_address: (),
-            initialized_account_alias: None,
-            wallet_alias_force: false,
-            fee_amount: 500_000.into(),
-            fee_token: native_token.clone(),
-            gas_limit: 1.into(),
-            expiration: None,
-            chain_id: Some(chain_id.clone()),
-            signing_key: Some(source.private_key.clone()),
-            signer: None,
-            tx_reveal_code_path: PathBuf::from("tx_reveal_pk.wasm"),
-            password: None,
-        },
-        source: TransferSource::Address(Address::from(&source.public_key)),
-        target: TransferTarget::Address(Address::from(&destination.public_key)),
-        token: native_token.clone(),
-        sub_prefix: None,
-        amount: amount,
-        native_token: native_token.clone(),
-        tx_code_path: PathBuf::from("tx_transfer.wasm"),
-    };
-
-    tx::submit_transfer(client, wallet, shielded_ctx, transfer_tx)
+async fn gen_transfer<'a>(
+    namada: &mut impl Namada<'a>,
+    source: &Account,
+    destination: &Account,
+    amount: InputAmount,
+) -> std::result::Result<ProcessTxResponse, namada::types::error::Error> {
+    let native_token = namada.native_token();
+    
+    let mut transfer_tx_builder = namada.new_transfer(
+        TransferSource::Address(Address::from(&source.public_key)),
+        TransferTarget::Address(Address::from(&destination.public_key)),
+        native_token,
+        amount,
+    )
+        .signing_keys(vec![source.private_key.clone()])
+        .fee_amount(InputAmount::from_str("0.5").unwrap())
+        .gas_limit(1.into());
+    let (mut transfer_tx, signing_data, _epoch) = transfer_tx_builder
+        .build(namada)
+        .await
+        .expect("unable to build transfer");
+    namada.sign(&mut transfer_tx, &transfer_tx_builder.tx, signing_data)
+            .expect("unable to sign reveal pk tx");
+    namada.submit(transfer_tx, &transfer_tx_builder.tx).await
 }
 
-async fn gen_actions(client: &HttpClient, accounts: &Vec<Account>, repeats: usize) {
+async fn gen_actions<'a>(
+    namada: &mut impl Namada<'a>,
+    accounts: &Vec<Account>,
+    repeats: usize,
+) {
     let mut rand_gen = rand::thread_rng();
 
     let mut txs = vec![];
 
-    for i in 0..repeats {
+    for _ in 0..repeats {
         let rand_one = rand_gen.gen_range(0..accounts.len());
         let rand_two = rand_gen.gen_range(0..accounts.len());
 
         if accounts[rand_one].balance < Amount::from(1_000_000) {
-            txs.push(Box::pin(get_funds_from_faucet(client, &accounts[rand_one])) as Pin<Box<dyn StdFuture<Output = std::result::Result<(), namada::ledger::tx::Error>>>>);
+            txs.push(get_funds_from_faucet(namada, &accounts[rand_one]).await);
             continue;
         }
 
-        let amount = Amount::from(rand_gen.gen_range(0..accounts[rand_one].balance.micro));
-        txs.push(Box::pin(gen_transfer(client, &accounts[rand_one], &accounts[rand_two], amount)));
+        let balance = u128::try_from(accounts[rand_one].balance).unwrap();
+        let amount = InputAmount::Unvalidated(DenominatedAmount::native(
+            Amount::from_uint(Uint::from(rand_gen.gen_range(0..balance)),0).unwrap()
+        ));
+        txs.push(gen_transfer(namada, &accounts[rand_one], &accounts[rand_two], amount).await);
     }
 
-    let outputs = futures::future::join_all(txs).await;
-
-    for o in outputs {
+    for o in txs {
         println!("Tx Result: {:?}", o);
     }
 }
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
+    let chain_id = ChainId::from_str(CHAIN_ID).unwrap();
     let tendermint_addr =
         TendermintAddress::from_str("127.0.0.1:26757").expect("Unable to connect to RPC");
     let http_client = HttpClient::new(tendermint_addr).unwrap();
 
-    fs::remove_file("wallet.toml").await;
+    let _ = fs::remove_file("wallet.toml").await;
     let mut shielded_ctx = SdkShieldedUtils::new(Path::new("masp/").to_path_buf());
     let mut wallet = gen_or_load_wallet(PathBuf::from("wallet.toml"));
-    let mut accounts = gen_accounts(&mut wallet, 100);
-    update_token_balances(&http_client, &mut accounts).await;
+    let mut namada = NamadaImpl::new(&http_client, &mut wallet, &mut shielded_ctx)
+        .chain_id(chain_id.clone());
+    let mut accounts = gen_accounts(&mut namada, 100);
+    update_token_balances(&mut namada, &mut accounts).await;
     for account in &accounts {
         println!(
             "Address: {:?} - Balance: {:?} - Revealed: {:?}",
@@ -318,26 +268,26 @@ async fn main() -> std::io::Result<()> {
             account.revealed
         );
     }
-    reveal_pks(&http_client, &mut accounts, &mut wallet).await;
+    reveal_pks(&mut namada, &mut accounts).await;
     let initial_accounts = accounts.clone();
 
     let mut counter = 0;
 
     loop {
         println!("+++++ Starting the loop +++++");
-        update_token_balances(&http_client, &mut accounts).await;
+        update_token_balances(&mut namada, &mut accounts).await;
         let initial_accounts = accounts.clone();
         for account in &initial_accounts {
             println!("Address: {:?} - Balance: {:?} - Revealed: {:?}", Address::from(&account.public_key), account.balance, account.revealed);
         }
 
-        gen_actions(&http_client, &accounts, 15).await;
+        gen_actions(&mut namada, &accounts, 15).await;
 
         let sleep = time::Duration::from_secs(1);
         println!("Sleeping");
         thread::sleep(sleep);
 
-        update_token_balances(&http_client, &mut accounts).await;
+        update_token_balances(&mut namada, &mut accounts).await;
         for i in 0..accounts.len() {
             println!("Address: {:?} - Old Balance: {:?} - New Balance: {:?} - Difference: {:?}", Address::from(&accounts[i].public_key), initial_accounts[i].balance, accounts[i].balance, initial_accounts[i].balance.checked_sub(accounts[i].balance));
         }
@@ -353,7 +303,6 @@ async fn main() -> std::io::Result<()> {
         //     break
         // }
     }
-
     /*
        - create a configurable number of accounts
        - send a configurable number of transactions between these accounts without PoW challenge
@@ -504,7 +453,7 @@ async fn main() -> std::io::Result<()> {
     //     .await;
     // println!("Balance {:?}", balance_res);
 
-    Ok(())
+    //Ok(())
 }
 
 mod wallet {
@@ -668,8 +617,6 @@ impl Default for SdkShieldedUtils {
 
 #[async_trait(?Send)]
 impl masp::ShieldedUtils for SdkShieldedUtils {
-    type C = tendermint_rpc::HttpClient;
-
     fn local_tx_prover(&self) -> LocalTxProver {
         if let Ok(params_dir) = env::var(masp::ENV_VAR_MASP_PARAMS_DIR) {
             let params_dir = PathBuf::from(params_dir);
