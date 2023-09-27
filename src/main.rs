@@ -1,43 +1,24 @@
 use async_std::fs;
-use std::error::Error;
-use std::fs::File;
-use std::fs::OpenOptions;
-use std::future::Future as StdFuture;
-use std::io::Write;
-use std::io::{Chain, Read};
-use std::marker::PhantomData;
 use std::path::Path;
 use std::path::PathBuf;
-use std::pin::Pin;
 use std::str::FromStr;
-use std::{env, thread, time, vec};
+use std::{thread, time, vec};
 
-use async_trait::async_trait;
-use borsh::BorshDeserialize;
-use borsh::BorshSerialize;
-use masp_primitives::memo::Memo::Future;
-use masp_proofs::prover::LocalTxProver;
 use rand::Rng;
-use rand_core::{OsRng, RngCore};
+use rand_core::OsRng;
 use tendermint_config::net::Address as TendermintAddress;
 use tendermint_rpc::HttpClient;
 use zeroize::Zeroizing;
 
-use futures::future::join_all;
-use namada::bip39::{Mnemonic, Seed};
-use namada::ledger::args;
-use namada::ledger::args::TxTransfer;
-use namada::ledger::masp::ShieldedContext;
+use namada::bip39::Mnemonic;
 use namada::ledger::wallet::alias::Alias;
-use namada::ledger::wallet::Store;
 use namada::ledger::wallet::Wallet;
 use namada::ledger::wallet::{store, GenRestoreKeyError, WalletUtils};
-use namada::ledger::{masp, rpc, tx};
+use namada::ledger::rpc;
+use namada::ledger::masp::fs::FsShieldedUtils;
 use namada::types::address::Address;
 use namada::types::chain::ChainId;
-use namada::types::key::common::{PublicKey, SecretKey};
 use namada::types::key::{common, SchemeType};
-use namada::types::masp::PaymentAddress;
 use namada::types::masp::TransferSource;
 use namada::types::masp::TransferTarget;
 use namada::types::token::Amount;
@@ -48,10 +29,6 @@ use namada::ledger::tx::ProcessTxResponse;
 use namada::types::token::DenominatedAmount;
 use namada::ledger::args::InputAmount;
 use namada::types::uint::Uint;
-
-/// Shielded context file name
-const FILE_NAME: &str = "shielded.dat";
-const TMP_FILE_NAME: &str = "shielded.tmp";
 
 const MNEMONIC_CODE: &str = "cruise ball fame lucky fabric govern \
                             length fruit permit tonight fame pear \
@@ -254,7 +231,7 @@ async fn main() -> std::io::Result<()> {
     let http_client = HttpClient::new(tendermint_addr).unwrap();
 
     let _ = fs::remove_file("wallet.toml").await;
-    let mut shielded_ctx = SdkShieldedUtils::new(Path::new("masp/").to_path_buf());
+    let mut shielded_ctx = FsShieldedUtils::new(Path::new("masp/").to_path_buf());
     let mut wallet = gen_or_load_wallet(PathBuf::from("wallet.toml"));
     let mut namada = NamadaImpl::new(&http_client, &mut wallet, &mut shielded_ctx)
         .chain_id(chain_id.clone());
@@ -573,102 +550,5 @@ impl WalletUtils for SdkWalletUtils {
     ) -> store::ConfirmationResponse {
         // Automatically replace aliases in non-interactive mode
         store::ConfirmationResponse::Replace
-    }
-}
-
-#[derive(Debug, BorshSerialize, BorshDeserialize, Clone)]
-pub struct SdkShieldedUtils {
-    #[borsh_skip]
-    context_dir: PathBuf,
-}
-
-impl SdkShieldedUtils {
-    /// Initialize a shielded transaction context that identifies notes
-    /// decryptable by any viewing key in the given set
-    pub fn new(context_dir: PathBuf) -> masp::ShieldedContext<Self> {
-        // Make sure that MASP parameters are downloaded to enable MASP
-        // transaction building and verification later on
-        let params_dir = masp::get_params_dir();
-        let spend_path = params_dir.join(masp::SPEND_NAME);
-        let convert_path = params_dir.join(masp::CONVERT_NAME);
-        let output_path = params_dir.join(masp::OUTPUT_NAME);
-        if !(spend_path.exists() && convert_path.exists() && output_path.exists()) {
-            println!("MASP parameters not present, downloading...");
-            masp_proofs::download_masp_parameters(None)
-                .expect("MASP parameters not present or downloadable");
-            println!("MASP parameter download complete, resuming execution...");
-        }
-        // Finally initialize a shielded context with the supplied directory
-        let utils = Self { context_dir };
-        masp::ShieldedContext {
-            utils,
-            ..Default::default()
-        }
-    }
-}
-
-impl Default for SdkShieldedUtils {
-    fn default() -> Self {
-        Self {
-            context_dir: PathBuf::from(FILE_NAME),
-        }
-    }
-}
-
-#[async_trait(?Send)]
-impl masp::ShieldedUtils for SdkShieldedUtils {
-    fn local_tx_prover(&self) -> LocalTxProver {
-        if let Ok(params_dir) = env::var(masp::ENV_VAR_MASP_PARAMS_DIR) {
-            let params_dir = PathBuf::from(params_dir);
-            let spend_path = params_dir.join(masp::SPEND_NAME);
-            let convert_path = params_dir.join(masp::CONVERT_NAME);
-            let output_path = params_dir.join(masp::OUTPUT_NAME);
-            LocalTxProver::new(&spend_path, &output_path, &convert_path)
-        } else {
-            LocalTxProver::with_default_location().expect("unable to load MASP Parameters")
-        }
-    }
-
-    /// Try to load the last saved shielded context from the given context
-    /// directory. If this fails, then leave the current context unchanged.
-    async fn load(self) -> std::io::Result<masp::ShieldedContext<Self>> {
-        // Try to load shielded context from file
-        let mut ctx_file = File::open(self.context_dir.join(FILE_NAME))?;
-        let mut bytes = Vec::new();
-        ctx_file.read_to_end(&mut bytes)?;
-        let mut new_ctx = masp::ShieldedContext::deserialize(&mut &bytes[..])?;
-        // Associate the originating context directory with the
-        // shielded context under construction
-        new_ctx.utils = self;
-        Ok(new_ctx)
-    }
-
-    /// Save this shielded context into its associated context directory
-    async fn save(&self, ctx: &masp::ShieldedContext<Self>) -> std::io::Result<()> {
-        // TODO: use mktemp crate?
-        let tmp_path = self.context_dir.join(TMP_FILE_NAME);
-        {
-            // First serialize the shielded context into a temporary file.
-            // Inability to create this file implies a simultaneuous write is in
-            // progress. In this case, immediately fail. This is unproblematic
-            // because the data intended to be stored can always be re-fetched
-            // from the blockchain.
-            let mut ctx_file = OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(tmp_path.clone())?;
-            let mut bytes = Vec::new();
-            ctx.serialize(&mut bytes)
-                .expect("cannot serialize shielded context");
-            ctx_file.write_all(&bytes[..])?;
-        }
-        // Atomically update the old shielded context file with new data.
-        // Atomicity is required to prevent other client instances from reading
-        // corrupt data.
-        std::fs::rename(tmp_path.clone(), self.context_dir.join(FILE_NAME))?;
-        // Finally, remove our temporary file to allow future saving of shielded
-        // contexts.
-        std::fs::remove_file(tmp_path)?;
-        Ok(())
     }
 }

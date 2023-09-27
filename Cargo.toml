@@ -14,7 +14,7 @@ futures = "0.3.28"
 getrandom = { version = "0.2" }
 masp_primitives = { git = "https://github.com/anoma/masp.git", rev = "50acc5028fbcd52a05970fe7991c7850ab04358e" }
 masp_proofs = { git = "https://github.com/anoma/masp.git", rev = "50acc5028fbcd52a05970fe7991c7850ab04358e", features = ["download-params"]}
-namada = { git = "https://github.com/anoma/namada.git", rev = "af3a2a8335fea551973f18d72bf7cb8a6d047517", default-features = false, features = ["abciplus", "namada-sdk"] }
+namada = { git = "https://github.com/anoma/namada.git", rev = "74aeca785e47216eb7611d1b6b97fcd59b2fffad", default-features = false, features = ["abciplus", "namada-sdk", "std"] }
 rand = {version = "0.8", default-features = false}
 rand_core = {version = "0.6", default-features = false}
 tendermint-config = {git="https://github.com/heliaxdev/tendermint-rs.git", rev="b7d1e5afc6f2ccb3fd1545c2174bab1cc48d7fa7"}
