@@ -13,7 +13,8 @@ use zeroize::Zeroizing;
 use namada::bip39::Mnemonic;
 use namada::ledger::wallet::alias::Alias;
 use namada::ledger::wallet::Wallet;
-use namada::ledger::wallet::{store, GenRestoreKeyError, WalletUtils};
+use namada::ledger::wallet::{store, GenRestoreKeyError};
+use namada::ledger::wallet::fs::FsWalletUtils;
 use namada::ledger::rpc;
 use namada::ledger::masp::fs::FsShieldedUtils;
 use namada::types::address::Address;
@@ -56,12 +57,6 @@ const FAUCET: &str =
 
  */
 
-fn gen_or_load_wallet(path: PathBuf) -> Wallet<SdkWalletUtils> {
-    let store = wallet::load_or_new(&path).unwrap();
-    let wallet: Wallet<SdkWalletUtils> = Wallet::new(path.clone(), store);
-    wallet
-}
-
 #[derive(Clone)]
 struct Account {
     key_alias: String,
@@ -76,12 +71,14 @@ struct Account {
 // - it's NAM balance
 // - check if it's PK has been revealed and if not, reveal it, otherwise reveal them
 // - returns a list of futures with potential revelations that need to be run first and update the account structure - this should only happen on the very first run
-fn gen_accounts<'a>(namada: &mut impl Namada<'a, WalletUtils = SdkWalletUtils>, size: usize) -> Vec<Account> {
+fn gen_accounts<'a>(namada: &mut impl Namada<'a>, size: usize) -> Vec<Account> {
     let mut accounts: Vec<Account> = vec![];
 
     for i in 0..size {
         let derivation_path = format!("m/44'/877'/0'/0'/{}'", i);
         let alias = format!("default_{}", i);
+        let mnemonic = Mnemonic::from_phrase(MNEMONIC_CODE, namada::bip39::Language::English)
+            .expect("unable to construct mnemonic");
         let (key_alias, sk) = namada
             .wallet
             .derive_key_from_user_mnemonic_code(
@@ -89,6 +86,7 @@ fn gen_accounts<'a>(namada: &mut impl Namada<'a, WalletUtils = SdkWalletUtils>, 
                 Some(alias),
                 false,
                 Some(derivation_path),
+                Some((mnemonic, Zeroizing::new("".to_owned()))),
                 None,
             )
             .expect("unable to derive key from mnemonic code")
@@ -102,7 +100,7 @@ fn gen_accounts<'a>(namada: &mut impl Namada<'a, WalletUtils = SdkWalletUtils>, 
         };
         accounts.push(account);
     }
-    wallet::save(namada.wallet.store(), namada.wallet.store_dir()).unwrap();
+    namada.wallet.save().expect("unable to save wallet");
     accounts
 }
 
@@ -225,16 +223,16 @@ async fn gen_actions<'a>(
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
-    let chain_id = ChainId::from_str(CHAIN_ID).unwrap();
     let tendermint_addr =
         TendermintAddress::from_str("127.0.0.1:26757").expect("Unable to connect to RPC");
     let http_client = HttpClient::new(tendermint_addr).unwrap();
 
     let _ = fs::remove_file("wallet.toml").await;
     let mut shielded_ctx = FsShieldedUtils::new(Path::new("masp/").to_path_buf());
-    let mut wallet = gen_or_load_wallet(PathBuf::from("wallet.toml"));
+    let mut wallet = FsWalletUtils::new(PathBuf::from("wallet.toml"));
+    let _ = wallet.load();
     let mut namada = NamadaImpl::new(&http_client, &mut wallet, &mut shielded_ctx)
-        .chain_id(chain_id.clone());
+        .chain_id(ChainId::from_str(CHAIN_ID).unwrap());
     let mut accounts = gen_accounts(&mut namada, 100);
     update_token_balances(&mut namada, &mut accounts).await;
     for account in &accounts {
@@ -431,124 +429,4 @@ async fn main() -> std::io::Result<()> {
     // println!("Balance {:?}", balance_res);
 
     //Ok(())
-}
-
-mod wallet {
-    use std::io::prelude::*;
-    use std::{fs, path::PathBuf};
-
-    use file_lock::{FileLock, FileOptions};
-    use namada::ledger::wallet::Store;
-    use thiserror::Error;
-
-    #[derive(Error, Debug)]
-    pub enum LoadStoreError {
-        #[error("Failed decoding the wallet store: {0}")]
-        Decode(toml::de::Error),
-        #[error("Failed to read the wallet store from {0}: {1}")]
-        ReadWallet(String, String),
-        #[error("Failed to write the wallet store: {0}")]
-        StoreNewWallet(String),
-    }
-
-    /// Save the wallet store to a file.
-    pub fn save(store: &Store, store_dir: &PathBuf) -> std::io::Result<()> {
-        let data = store.encode();
-        // let wallet_path = wallet_file(store_dir);
-        // Make sure the dir exists
-        let wallet_dir = store_dir.parent().unwrap();
-        fs::create_dir_all(wallet_dir)?;
-        // Write the file
-        let options = FileOptions::new().create(true).write(true).truncate(true);
-        let mut filelock = FileLock::lock(store_dir, true, options)?;
-        filelock.file.write_all(&data)
-    }
-
-    /// Load the store file or create a new one without any keys or addresses.
-    pub fn load_or_new(store_dir: &PathBuf) -> Result<Store, LoadStoreError> {
-        load(store_dir).or_else(|_| {
-            let store = Store::default();
-            save(&store, store_dir)
-                .map_err(|err| LoadStoreError::StoreNewWallet(err.to_string()))?;
-            Ok(store)
-        })
-    }
-
-    /// Attempt to load the store file.
-    pub fn load(store_dir: &PathBuf) -> Result<Store, LoadStoreError> {
-        // let wallet_file = wallet_file(store_dir);
-        match FileLock::lock(store_dir, true, FileOptions::new().read(true).write(false)) {
-            Ok(mut filelock) => {
-                let mut store = Vec::<u8>::new();
-                filelock.file.read_to_end(&mut store).map_err(|err| {
-                    LoadStoreError::ReadWallet(
-                        store_dir.to_str().unwrap().parse().unwrap(),
-                        err.to_string(),
-                    )
-                })?;
-                Store::decode(store).map_err(LoadStoreError::Decode)
-            }
-            Err(err) => Err(LoadStoreError::ReadWallet(
-                store_dir.to_string_lossy().into_owned(),
-                err.to_string(),
-            )),
-        }
-    }
-}
-
-/// A degenerate implementation of wallet interactivity
-pub struct SdkWalletUtils;
-
-impl WalletUtils for SdkWalletUtils {
-    type Storage = PathBuf;
-    type Rng = OsRng;
-
-    fn generate_mnemonic_code(
-        mnemonic_type: namada::bip39::MnemonicType,
-        rng: &mut Self::Rng,
-    ) -> Result<namada::bip39::Mnemonic, namada::ledger::wallet::GenRestoreKeyError> {
-        const BITS_PER_BYTE: usize = 8;
-
-        // generate random mnemonic
-        let entropy_size = mnemonic_type.entropy_bits() / BITS_PER_BYTE;
-        let mut bytes = vec![0u8; entropy_size];
-        rand::RngCore::fill_bytes(rng, &mut bytes);
-        let mnemonic =
-            namada::bip39::Mnemonic::from_entropy(&bytes, namada::bip39::Language::English)
-                .expect("Mnemonic creation should not fail");
-
-        Ok(mnemonic)
-    }
-
-    fn read_decryption_password() -> Zeroizing<String> {
-        panic!("attempted to prompt for password in non-interactive mode");
-    }
-
-    fn read_encryption_password() -> Zeroizing<String> {
-        panic!("attempted to prompt for password in non-interactive mode");
-    }
-
-    fn read_alias(_prompt_msg: &str) -> String {
-        panic!("attempted to prompt for alias in non-interactive mode");
-    }
-
-    fn read_mnemonic_code(
-    ) -> Result<namada::bip39::Mnemonic, namada::ledger::wallet::GenRestoreKeyError> {
-        Mnemonic::from_phrase(MNEMONIC_CODE, namada::bip39::Language::English)
-            .map_err(|_| GenRestoreKeyError::MnemonicInputError)
-        // panic!("attempted to prompt for alias in non-interactive mode");
-    }
-
-    fn read_mnemonic_passphrase(_confirm: bool) -> Zeroizing<String> {
-        Zeroizing::new("".to_owned())
-        // panic!("attempted to prompt for alias in non-interactive mode");
-    }
-
-    fn show_overwrite_confirmation(
-        _alias: &Alias,
-        _alias_for: &str,
-    ) -> store::ConfirmationResponse {
-        // Automatically replace aliases in non-interactive mode
-        store::ConfirmationResponse::Replace
-    }
 }
