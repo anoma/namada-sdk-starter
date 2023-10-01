@@ -30,6 +30,7 @@ use namada::ledger::tx::ProcessTxResponse;
 use namada::types::token::DenominatedAmount;
 use namada::ledger::args::InputAmount;
 use namada::types::uint::Uint;
+use namada::ledger::rpc::denominate_amount;
 
 const MNEMONIC_CODE: &str = "cruise ball fame lucky fabric govern \
                             length fruit permit tonight fame pear \
@@ -210,9 +211,12 @@ async fn gen_actions<'a>(
         }
 
         let balance = u128::try_from(accounts[rand_one].balance).unwrap();
-        let amount = InputAmount::Unvalidated(DenominatedAmount::native(
-            Amount::from_uint(Uint::from(rand_gen.gen_range(0..balance)),0).unwrap()
-        ));
+        let native_token = namada.native_token();
+        let amount = denominate_amount(
+            namada.client,
+            &native_token,
+            Amount::from_uint(Uint::from(rand_gen.gen_range(0..balance)),0).unwrap(),
+        ).await.into();
         txs.push(gen_transfer(namada, &accounts[rand_one], &accounts[rand_two], amount).await);
     }
 
@@ -230,7 +234,6 @@ async fn main() -> std::io::Result<()> {
     let _ = fs::remove_file("wallet.toml").await;
     let mut shielded_ctx = FsShieldedUtils::new(Path::new("masp/").to_path_buf());
     let mut wallet = FsWalletUtils::new(PathBuf::from("wallet.toml"));
-    let _ = wallet.load();
     let mut namada = NamadaImpl::new(&http_client, &mut wallet, &mut shielded_ctx)
         .chain_id(ChainId::from_str(CHAIN_ID).unwrap());
     let mut accounts = gen_accounts(&mut namada, 100);
