@@ -12,35 +12,34 @@ use tendermint_config::net::Address as TendermintAddress;
 use tendermint_rpc::HttpClient;
 use zeroize::Zeroizing;
 
-use namada::bip39::Mnemonic;
-use namada::ledger::Namada;
-use namada::ledger::NamadaImpl;
-use namada::sdk::args::InputAmount;
-use namada::sdk::args::TxBuilder;
-use namada::sdk::masp::fs::FsShieldedUtils;
-use namada::sdk::rpc;
-use namada::sdk::rpc::{denominate_amount, format_denominated_amount as format_amount};
-use namada::sdk::tx::ProcessTxResponse;
-use namada::sdk::wallet::fs::FsWalletUtils;
-use namada::types::address::Address;
-use namada::types::chain::ChainId;
-use namada::types::io::NullIo;
-use namada::types::key::common::SecretKey;
-use namada::types::key::{common, SchemeType};
-use namada::types::masp::TransferSource;
-use namada::types::masp::TransferTarget;
-use namada::types::token::Amount;
-use namada::types::uint::Uint;
+use namada_sdk::args::InputAmount;
+use namada_sdk::args::TxBuilder;
+use namada_sdk::bip39::Mnemonic;
+use namada_sdk::core::types::address::Address;
+use namada_sdk::core::types::chain::ChainId;
+use namada_sdk::core::types::key::common::SecretKey;
+use namada_sdk::core::types::key::{common, SchemeType};
+use namada_sdk::core::types::masp::TransferSource;
+use namada_sdk::core::types::masp::TransferTarget;
+use namada_sdk::core::types::token::Amount;
+use namada_sdk::core::types::uint::Uint;
+use namada_sdk::io::NullIo;
+use namada_sdk::masp::fs::FsShieldedUtils;
+use namada_sdk::rpc;
+use namada_sdk::tx::ProcessTxResponse;
+use namada_sdk::wallet::fs::FsWalletUtils;
+use namada_sdk::Namada;
+use namada_sdk::NamadaImpl;
 
 const MNEMONIC_CODE: &str = "cruise ball fame lucky fabric govern \
                             length fruit permit tonight fame pear \
                             horse park key chimney furnace lobster \
                             foot example shoot dry fuel lawn";
 
-const CHAIN_ID: &str = "e2e-test.1247e85aaaec9e80e7051";
+const CHAIN_ID: &str = "e2e-test.a4f327974f92303b6b2cc";
 const FAUCET: &str =
-    "atest1v4ehgw36gge5x33cxc6rg3p3xueyyv2989ryxdzyggunzs3kxgcn2dfegymnqdenx5e5xdec6uc56q";
-const FAUCET_KEY: &str = "006616290a9ad448cc7858a44df5d71f6ddad10c08d4a23470617e574ef9f71a2e";
+    "atest1v4ehgw36xq6ngs3ng5crvdpngg6yvsecx4znjdfegyurgwzzx4pyywfexuuyys69gc6rzdfnryrntx";
+const FAUCET_KEY: &str = "00447ffcd1ffd641e7fcf09f8991ec398081dcc1f14af46e78d406fae3c6223ac0";
 /*
 
 - generate X number of wallets
@@ -71,7 +70,7 @@ struct Account {
 // of native tokens from the faucet
 async fn gen_accounts<'a>(namada: &mut impl Namada<'a>, size: usize) -> Vec<Account> {
     let mut accounts: Vec<Account> = vec![];
-    let mnemonic = Mnemonic::from_phrase(MNEMONIC_CODE, namada::bip39::Language::English)
+    let mnemonic = Mnemonic::from_phrase(MNEMONIC_CODE, namada_sdk::bip39::Language::English)
         .expect("unable to construct mnemonic");
     let mut txs: Vec<Pin<Box<dyn Future<Output = _>>>> = vec![];
 
@@ -161,7 +160,7 @@ async fn reveal_pks<'a>(namada: &mut impl Namada<'a>, accounts: &mut [Account]) 
 async fn get_funds_from_faucet<'a>(
     namada: &impl Namada<'a>,
     account: &Account,
-) -> std::result::Result<ProcessTxResponse, namada::sdk::error::Error> {
+) -> std::result::Result<ProcessTxResponse, namada_sdk::error::Error> {
     let faucet = Address::from_str(FAUCET).unwrap();
 
     let mut transfer_tx_builder = namada
@@ -190,7 +189,7 @@ async fn gen_transfer<'a>(
     source: &Account,
     destination: &Account,
     amount: InputAmount,
-) -> std::result::Result<ProcessTxResponse, namada::sdk::error::Error> {
+) -> std::result::Result<ProcessTxResponse, namada_sdk::error::Error> {
     let mut transfer_tx_builder = namada
         .new_transfer(
             TransferSource::Address(Address::from(&source.public_key)),
@@ -229,8 +228,7 @@ async fn gen_actions<'a>(namada: &impl Namada<'a>, accounts: &Vec<Account>, repe
         } else {
             // Generate a random amount that is less than the source balance
             let balance = u128::try_from(accounts[rand_one].balance).unwrap();
-            let amount = denominate_amount(
-                namada,
+            let amount = namada.denominate_amount(
                 &namada.native_token(),
                 Amount::from_uint(Uint::from(rand_gen.gen_range(0..balance)), 0).unwrap(),
             )
@@ -278,7 +276,7 @@ async fn main() -> std::io::Result<()> {
         println!(
             "Address: {:?} - Balance: {} - Revealed: {:?}",
             Address::from(&account.public_key),
-            format_amount(&namada, &nam, account.balance).await,
+            namada.format_amount(&nam, account.balance).await,
             account.revealed
         );
     }
@@ -294,7 +292,7 @@ async fn main() -> std::io::Result<()> {
             println!(
                 "Address: {:?} - Balance: {} - Revealed: {:?}",
                 Address::from(&account.public_key),
-                format_amount(&namada, &nam, account.balance).await,
+                namada.format_amount(&nam, account.balance).await,
                 account.revealed,
             );
         }
@@ -317,10 +315,10 @@ async fn main() -> std::io::Result<()> {
             println!(
                 "Address: {:?} - Old Balance: {} - New Balance: {} - Difference: {}{}",
                 Address::from(&accounts[i].public_key),
-                format_amount(&namada, &nam, initial_accounts[i].balance).await,
-                format_amount(&namada, &nam, accounts[i].balance).await,
+                namada.format_amount(&nam, initial_accounts[i].balance).await,
+                namada.format_amount(&nam, accounts[i].balance).await,
                 sign,
-                format_amount(&namada, &nam, diff).await,
+                namada.format_amount(&nam, diff).await,
             );
         }
 
