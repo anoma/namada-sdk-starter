@@ -10,7 +10,6 @@ use std::{thread, time, vec};
 use rand::Rng;
 use tendermint_config::net::Address as TendermintAddress;
 use tendermint_rpc::HttpClient;
-use zeroize::Zeroizing;
 
 use namada_sdk::args::InputAmount;
 use namada_sdk::args::TxBuilder;
@@ -30,6 +29,7 @@ use namada_sdk::tx::ProcessTxResponse;
 use namada_sdk::wallet::fs::FsWalletUtils;
 use namada_sdk::Namada;
 use namada_sdk::NamadaImpl;
+use namada_sdk::zeroize::Zeroizing;
 
 const MNEMONIC_CODE: &str = "cruise ball fame lucky fabric govern \
                             length fruit permit tonight fame pear \
