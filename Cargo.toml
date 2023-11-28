@@ -10,9 +10,9 @@ async-std = "1.11.0"
 borsh-derive = { version = "=1.0.0-alpha.4" }
 futures = "0.3.28"
 getrandom = { version = "0.2" }
-namada_sdk = { git = "https://github.com/anoma/namada.git", rev = "v0.24.0", default-features = false, features = ["abciplus", "namada-sdk", "std"] }
+namada_sdk = { git = "https://github.com/anoma/namada.git", branch = "murisi/remove-sdk-lifetimes", default-features = false, features = ["namada-sdk", "std"] }
 rand = {version = "0.8", default-features = false}
 rand_core = {version = "0.6", default-features = false}
-tendermint-config = {git="https://github.com/heliaxdev/tendermint-rs.git", rev="b7d1e5afc6f2ccb3fd1545c2174bab1cc48d7fa7"}
-tendermint-rpc = {git="https://github.com/heliaxdev/tendermint-rs.git", rev="b7d1e5afc6f2ccb3fd1545c2174bab1cc48d7fa7", features = ["http-client"]}
+tendermint-config = "0.34.0"
+tendermint-rpc = {version = "0.34.0", default-features = false, features = ["http-client"]}
 tokio = {version = "1.8.2", default-features = false}
