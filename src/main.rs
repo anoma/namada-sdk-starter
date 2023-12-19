@@ -1,5 +1,6 @@
 use async_std::fs;
 use futures::future::join_all;
+use namada_sdk::core::types::key::RefTo;
 use std::future::Future;
 use std::path::Path;
 use std::path::PathBuf;
@@ -25,7 +26,9 @@ use namada_sdk::core::types::uint::Uint;
 use namada_sdk::io::NullIo;
 use namada_sdk::masp::fs::FsShieldedUtils;
 use namada_sdk::rpc;
+use namada_sdk::signing::default_sign;
 use namada_sdk::tx::ProcessTxResponse;
+use namada_sdk::wallet::DerivationPath;
 use namada_sdk::wallet::fs::FsWalletUtils;
 use namada_sdk::Namada;
 use namada_sdk::NamadaImpl;
@@ -60,15 +63,15 @@ const FAUCET_KEY: &str = "00447ffcd1ffd641e7fcf09f8991ec398081dcc1f14af46e78d406
 
 #[derive(Clone)]
 struct Account {
-    public_key: common::PublicKey,
-    private_key: common::SecretKey,
-    balance: Amount,
-    revealed: bool,
+    pub public_key: common::PublicKey,
+    pub private_key: common::SecretKey,
+    pub balance: Amount,
+    pub revealed: bool,
 }
 
 // Generate the given number of accounts and load each up with a preset number
 // of native tokens from the faucet
-async fn gen_accounts<'a>(namada: &mut impl Namada<'a>, size: usize) -> Vec<Account> {
+async fn gen_accounts(namada: &mut impl Namada, size: usize) -> Vec<Account> {
     let mut accounts: Vec<Account> = vec![];
     let mnemonic = Mnemonic::from_phrase(MNEMONIC_CODE, namada_sdk::bip39::Language::English)
         .expect("unable to construct mnemonic");
@@ -76,21 +79,21 @@ async fn gen_accounts<'a>(namada: &mut impl Namada<'a>, size: usize) -> Vec<Acco
 
     // Create the given number of accounts
     for i in 0..size {
-        let derivation_path = format!("m/44'/877'/0'/0'/{}'", i);
+        let derivation_path = DerivationPath::from_str(&format!("m/44'/877'/0'/0'/{}'", i))
+            .expect("unable to parse derivation path");
         let alias = format!("default_{}", i);
         let (_key_alias, sk) = namada
             .wallet_mut()
             .await
-            .derive_key_from_user_mnemonic_code(
+            .derive_key_from_mnemonic_code(
                 SchemeType::Ed25519,
                 Some(alias),
                 false,
-                Some(derivation_path),
+                derivation_path,
                 Some((mnemonic.clone(), Zeroizing::new("".to_owned()))),
                 None,
             )
-            .expect("unable to derive key from mnemonic code")
-            .unwrap();
+            .expect("unable to derive key from mnemonic code");
         let account = Account {
             public_key: sk.to_public(),
             private_key: sk,
@@ -114,7 +117,7 @@ async fn gen_accounts<'a>(namada: &mut impl Namada<'a>, size: usize) -> Vec<Acco
 }
 
 // Query the current account balances from the network
-async fn update_token_balances<'a>(namada: &impl Namada<'a>, accounts: &mut Vec<Account>) {
+async fn update_token_balances(namada: &impl Namada, accounts: &mut Vec<Account>) {
     for account in accounts {
         account.balance = rpc::get_token_balance(
             namada.client(),
@@ -127,20 +130,20 @@ async fn update_token_balances<'a>(namada: &impl Namada<'a>, accounts: &mut Vec<
 }
 
 // Submit transactions to reveal the public key of each account
-async fn reveal_pks<'a>(namada: &mut impl Namada<'a>, accounts: &mut [Account]) {
+async fn reveal_pks(namada: &mut impl Namada, accounts: &mut [Account]) {
     let mut reveal_builders = Vec::new();
     let mut txs: Vec<Pin<Box<dyn Future<Output = _>>>> = vec![];
     // Construct and sign all the reveal PK transactions
     for account in accounts.iter() {
         let reveal_tx_builder = namada
             .new_reveal_pk(account.public_key.clone())
-            .signing_keys(vec![account.private_key.clone()]);
+            .signing_keys(vec![account.public_key.clone()]);
         let (mut reveal_tx, signing_data, _) = reveal_tx_builder
             .build(namada)
             .await
             .expect("unable to build reveal pk tx");
         namada
-            .sign(&mut reveal_tx, &reveal_tx_builder.tx, signing_data)
+            .sign(&mut reveal_tx, &reveal_tx_builder.tx, signing_data, default_sign, ())
             .await
             .expect("unable to sign reveal pk tx");
         reveal_builders.push((reveal_tx, reveal_tx_builder.tx));
@@ -157,10 +160,12 @@ async fn reveal_pks<'a>(namada: &mut impl Namada<'a>, accounts: &mut [Account]) 
 }
 
 // Load a preset amount of tokens from the faucet into the given account
-async fn get_funds_from_faucet<'a>(
-    namada: &impl Namada<'a>,
+async fn get_funds_from_faucet(
+    namada: &impl Namada,
     account: &Account,
 ) -> std::result::Result<ProcessTxResponse, namada_sdk::error::Error> {
+    let faucet_sk = common::SecretKey::from_str(FAUCET_KEY).unwrap();
+    let faucet_pk = faucet_sk.ref_to();
     let faucet = Address::from_str(FAUCET).unwrap();
 
     let mut transfer_tx_builder = namada
@@ -170,13 +175,13 @@ async fn get_funds_from_faucet<'a>(
             namada.native_token(),
             InputAmount::from_str("1000").unwrap(),
         )
-        .signing_keys(vec![SecretKey::from_str(FAUCET_KEY).unwrap()]);
+        .signing_keys(vec![faucet_pk]);
     let (mut transfer_tx, signing_data, _epoch) = transfer_tx_builder
         .build(namada)
         .await
         .expect("unable to build transfer");
     namada
-        .sign(&mut transfer_tx, &transfer_tx_builder.tx, signing_data)
+        .sign(&mut transfer_tx, &transfer_tx_builder.tx, signing_data, default_sign, ())
         .await
         .expect("unable to sign reveal pk tx");
     namada.submit(transfer_tx, &transfer_tx_builder.tx).await
@@ -184,8 +189,8 @@ async fn get_funds_from_faucet<'a>(
 
 // Transfer the given amount of native tokens from the source account to the
 // destination account.
-async fn gen_transfer<'a>(
-    namada: &impl Namada<'a>,
+async fn gen_transfer(
+    namada: &impl Namada,
     source: &Account,
     destination: &Account,
     amount: InputAmount,
@@ -197,13 +202,13 @@ async fn gen_transfer<'a>(
             namada.native_token(),
             amount,
         )
-        .signing_keys(vec![source.private_key.clone()]);
+        .signing_keys(vec![source.public_key.clone()]);
     let (mut transfer_tx, signing_data, _epoch) = transfer_tx_builder
         .build(namada)
         .await
         .expect("unable to build transfer");
     namada
-        .sign(&mut transfer_tx, &transfer_tx_builder.tx, signing_data)
+        .sign(&mut transfer_tx, &transfer_tx_builder.tx, signing_data, default_sign, ())
         .await
         .expect("unable to sign reveal pk tx");
     namada.submit(transfer_tx, &transfer_tx_builder.tx).await
@@ -213,7 +218,7 @@ async fn gen_transfer<'a>(
 // tokens from the first to the second in those cases where the source balance
 // exceeds 1 NAM. Otherwise reload a preset amount of native tokens into the
 // source account from the faucet.
-async fn gen_actions<'a>(namada: &impl Namada<'a>, accounts: &Vec<Account>, repeats: usize) {
+async fn gen_actions(namada: &impl Namada, accounts: &Vec<Account>, repeats: usize) {
     let mut rand_gen = rand::thread_rng();
 
     let mut txs: Vec<Pin<Box<dyn Future<Output = _>>>> = vec![];
@@ -258,11 +263,11 @@ async fn main() -> std::io::Result<()> {
     let http_client = HttpClient::new(tendermint_addr).unwrap();
     let _ = fs::remove_file("wallet.toml").await;
     // Setup wallet storage
-    let mut wallet = FsWalletUtils::new(PathBuf::from("wallet.toml"));
+    let wallet = FsWalletUtils::new(PathBuf::from("wallet.toml"));
     // Setup shielded context storage
-    let mut shielded_ctx = FsShieldedUtils::new(Path::new("masp/").to_path_buf());
+    let shielded_ctx = FsShieldedUtils::new(Path::new("masp/").to_path_buf());
     // Setup the Namada context
-    let mut namada = NamadaImpl::new(&http_client, &mut wallet, &mut shielded_ctx, &NullIo)
+    let mut namada = NamadaImpl::new(http_client, wallet, shielded_ctx, NullIo)
         .await
         .expect("unable to construct Namada object")
         .chain_id(ChainId::from_str(CHAIN_ID).unwrap());
