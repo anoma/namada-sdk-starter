@@ -1,5 +1,6 @@
 use async_std::fs;
 use futures::future::join_all;
+use namada_sdk::core::types::key::RefTo;
 use std::future::Future;
 use std::path::Path;
 use std::path::PathBuf;
@@ -62,10 +63,10 @@ const FAUCET_KEY: &str = "00447ffcd1ffd641e7fcf09f8991ec398081dcc1f14af46e78d406
 
 #[derive(Clone)]
 struct Account {
-    public_key: common::PublicKey,
-    private_key: common::SecretKey,
-    balance: Amount,
-    revealed: bool,
+    pub public_key: common::PublicKey,
+    pub private_key: common::SecretKey,
+    pub balance: Amount,
+    pub revealed: bool,
 }
 
 // Generate the given number of accounts and load each up with a preset number
@@ -136,13 +137,13 @@ async fn reveal_pks(namada: &mut impl Namada, accounts: &mut [Account]) {
     for account in accounts.iter() {
         let reveal_tx_builder = namada
             .new_reveal_pk(account.public_key.clone())
-            .signing_keys(vec![account.private_key.clone()]);
+            .signing_keys(vec![account.public_key.clone()]);
         let (mut reveal_tx, signing_data, _) = reveal_tx_builder
             .build(namada)
             .await
             .expect("unable to build reveal pk tx");
         namada
-            .sign(&mut reveal_tx, &reveal_tx_builder.tx, signing_data, default_sign)
+            .sign(&mut reveal_tx, &reveal_tx_builder.tx, signing_data, default_sign, ())
             .await
             .expect("unable to sign reveal pk tx");
         reveal_builders.push((reveal_tx, reveal_tx_builder.tx));
@@ -163,6 +164,8 @@ async fn get_funds_from_faucet(
     namada: &impl Namada,
     account: &Account,
 ) -> std::result::Result<ProcessTxResponse, namada_sdk::error::Error> {
+    let faucet_sk = common::SecretKey::from_str(FAUCET_KEY).unwrap();
+    let faucet_pk = faucet_sk.ref_to();
     let faucet = Address::from_str(FAUCET).unwrap();
 
     let mut transfer_tx_builder = namada
@@ -172,13 +175,13 @@ async fn get_funds_from_faucet(
             namada.native_token(),
             InputAmount::from_str("1000").unwrap(),
         )
-        .signing_keys(vec![SecretKey::from_str(FAUCET_KEY).unwrap()]);
+        .signing_keys(vec![faucet_pk]);
     let (mut transfer_tx, signing_data, _epoch) = transfer_tx_builder
         .build(namada)
         .await
         .expect("unable to build transfer");
     namada
-        .sign(&mut transfer_tx, &transfer_tx_builder.tx, signing_data, default_sign)
+        .sign(&mut transfer_tx, &transfer_tx_builder.tx, signing_data, default_sign, ())
         .await
         .expect("unable to sign reveal pk tx");
     namada.submit(transfer_tx, &transfer_tx_builder.tx).await
@@ -199,13 +202,13 @@ async fn gen_transfer(
             namada.native_token(),
             amount,
         )
-        .signing_keys(vec![source.private_key.clone()]);
+        .signing_keys(vec![source.public_key.clone()]);
     let (mut transfer_tx, signing_data, _epoch) = transfer_tx_builder
         .build(namada)
         .await
         .expect("unable to build transfer");
     namada
-        .sign(&mut transfer_tx, &transfer_tx_builder.tx, signing_data, default_sign)
+        .sign(&mut transfer_tx, &transfer_tx_builder.tx, signing_data, default_sign, ())
         .await
         .expect("unable to sign reveal pk tx");
     namada.submit(transfer_tx, &transfer_tx_builder.tx).await

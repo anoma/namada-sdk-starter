@@ -7,10 +7,9 @@ edition = "2021"
 
 [dependencies]
 async-std = "1.11.0"
-borsh-derive = { version = "=1.0.0-alpha.4" }
 futures = "0.3.28"
 getrandom = { version = "0.2" }
-namada_sdk = { git = "https://github.com/anoma/namada.git", branch = "murisi/remove-sdk-lifetimes", default-features = false, features = ["namada-sdk", "std"] }
+namada_sdk = { git = "https://github.com/anoma/namada.git", rev = "v0.28.1", features = ["std"] }
 rand = {version = "0.8", default-features = false}
 rand_core = {version = "0.6", default-features = false}
 tendermint-config = "0.34.0"
