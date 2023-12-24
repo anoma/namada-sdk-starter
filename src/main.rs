@@ -28,11 +28,11 @@ use namada_sdk::masp::fs::FsShieldedUtils;
 use namada_sdk::rpc;
 use namada_sdk::signing::default_sign;
 use namada_sdk::tx::ProcessTxResponse;
-use namada_sdk::wallet::DerivationPath;
 use namada_sdk::wallet::fs::FsWalletUtils;
+use namada_sdk::wallet::DerivationPath;
+use namada_sdk::zeroize::Zeroizing;
 use namada_sdk::Namada;
 use namada_sdk::NamadaImpl;
-use namada_sdk::zeroize::Zeroizing;
 
 const MNEMONIC_CODE: &str = "cruise ball fame lucky fabric govern \
                             length fruit permit tonight fame pear \
@@ -40,6 +40,8 @@ const MNEMONIC_CODE: &str = "cruise ball fame lucky fabric govern \
                             foot example shoot dry fuel lawn";
 
 const CHAIN_ID: &str = "e2e-test.a4f327974f92303b6b2cc";
+const TENDERMINT_ADDR: &str = "127.0.0.1:27657";
+
 const FAUCET: &str =
     "atest1v4ehgw36xq6ngs3ng5crvdpngg6yvsecx4znjdfegyurgwzzx4pyywfexuuyys69gc6rzdfnryrntx";
 const FAUCET_KEY: &str = "00447ffcd1ffd641e7fcf09f8991ec398081dcc1f14af46e78d406fae3c6223ac0";
@@ -143,7 +145,13 @@ async fn reveal_pks(namada: &mut impl Namada, accounts: &mut [Account]) {
             .await
             .expect("unable to build reveal pk tx");
         namada
-            .sign(&mut reveal_tx, &reveal_tx_builder.tx, signing_data, default_sign, ())
+            .sign(
+                &mut reveal_tx,
+                &reveal_tx_builder.tx,
+                signing_data,
+                default_sign,
+                (),
+            )
             .await
             .expect("unable to sign reveal pk tx");
         reveal_builders.push((reveal_tx, reveal_tx_builder.tx));
@@ -181,7 +189,13 @@ async fn get_funds_from_faucet(
         .await
         .expect("unable to build transfer");
     namada
-        .sign(&mut transfer_tx, &transfer_tx_builder.tx, signing_data, default_sign, ())
+        .sign(
+            &mut transfer_tx,
+            &transfer_tx_builder.tx,
+            signing_data,
+            default_sign,
+            (),
+        )
         .await
         .expect("unable to sign reveal pk tx");
     namada.submit(transfer_tx, &transfer_tx_builder.tx).await
@@ -208,7 +222,13 @@ async fn gen_transfer(
         .await
         .expect("unable to build transfer");
     namada
-        .sign(&mut transfer_tx, &transfer_tx_builder.tx, signing_data, default_sign, ())
+        .sign(
+            &mut transfer_tx,
+            &transfer_tx_builder.tx,
+            signing_data,
+            default_sign,
+            (),
+        )
         .await
         .expect("unable to sign reveal pk tx");
     namada.submit(transfer_tx, &transfer_tx_builder.tx).await
@@ -233,12 +253,13 @@ async fn gen_actions(namada: &impl Namada, accounts: &Vec<Account>, repeats: usi
         } else {
             // Generate a random amount that is less than the source balance
             let balance = u128::try_from(accounts[rand_one].balance).unwrap();
-            let amount = namada.denominate_amount(
-                &namada.native_token(),
-                Amount::from_uint(Uint::from(rand_gen.gen_range(0..balance)), 0).unwrap(),
-            )
-            .await
-            .into();
+            let amount = namada
+                .denominate_amount(
+                    &namada.native_token(),
+                    Amount::from_uint(Uint::from(rand_gen.gen_range(0..balance)), 0).unwrap(),
+                )
+                .await
+                .into();
             // Initiate the transfer from the source to the destination
             txs.push(Box::pin(gen_transfer(
                 namada,
@@ -259,11 +280,13 @@ async fn gen_actions(namada: &impl Namada, accounts: &Vec<Account>, repeats: usi
 async fn main() -> std::io::Result<()> {
     // Setup client
     let tendermint_addr =
-        TendermintAddress::from_str("127.0.0.1:27657").expect("Unable to connect to RPC");
+        TendermintAddress::from_str(TENDERMINT_ADDR).expect("Unable to connect to RPC");
+    // If you want to use a public rpc, you can intitalize the client like this:
+    // let http_client = HttpClient::new("https://rpc.luminara.icu").unwrap();
     let http_client = HttpClient::new(tendermint_addr).unwrap();
-    let _ = fs::remove_file("wallet.toml").await;
+    let _ = fs::remove_file("wallet").await;
     // Setup wallet storage
-    let wallet = FsWalletUtils::new(PathBuf::from("wallet.toml"));
+    let wallet = FsWalletUtils::new(PathBuf::from("wallet"));
     // Setup shielded context storage
     let shielded_ctx = FsShieldedUtils::new(Path::new("masp/").to_path_buf());
     // Setup the Namada context
@@ -320,7 +343,9 @@ async fn main() -> std::io::Result<()> {
             println!(
                 "Address: {:?} - Old Balance: {} - New Balance: {} - Difference: {}{}",
                 Address::from(&accounts[i].public_key),
-                namada.format_amount(&nam, initial_accounts[i].balance).await,
+                namada
+                    .format_amount(&nam, initial_accounts[i].balance)
+                    .await,
                 namada.format_amount(&nam, accounts[i].balance).await,
                 sign,
                 namada.format_amount(&nam, diff).await,
