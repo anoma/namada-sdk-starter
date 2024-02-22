@@ -1,5 +1,6 @@
 FROM rust:1.65.0-slim-buster AS namada-builder
 ARG BRANCH=v0.15.4
+ARG CHAIN_ID="public-testnet-8.0.b92ef72b820"
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y \
@@ -74,7 +75,6 @@ RUN git clone -b $TENDERMINT_VERSION --single-branch \
     && make build
 
 FROM debian:bullseye-slim AS runtime
-ENV CHAIN_ID="public-testnet-8.0.b92ef72b820"
 ENV NAMADA_BASE_DIR=/.namada
 ENV NAMADA_LOG_COLOR=false
 ENV TM_LOG_LEVEL=p2p:error,pex:error 
