@@ -1,6 +1,6 @@
 use async_std::fs;
 use futures::future::join_all;
-use namada_sdk::core::types::key::RefTo;
+use namada_sdk::key::RefTo;
 use std::future::Future;
 use std::path::Path;
 use std::path::PathBuf;
@@ -15,14 +15,14 @@ use tendermint_rpc::HttpClient;
 use namada_sdk::args::InputAmount;
 use namada_sdk::args::TxBuilder;
 use namada_sdk::bip39::Mnemonic;
-use namada_sdk::core::types::address::Address;
-use namada_sdk::core::types::chain::ChainId;
-use namada_sdk::core::types::key::common::SecretKey;
-use namada_sdk::core::types::key::{common, SchemeType};
-use namada_sdk::core::types::masp::TransferSource;
-use namada_sdk::core::types::masp::TransferTarget;
-use namada_sdk::core::types::token::Amount;
-use namada_sdk::core::types::uint::Uint;
+use namada_sdk::address::Address;
+use namada_sdk::chain::ChainId;
+use namada_sdk::key::common::SecretKey;
+use namada_sdk::key::{common, SchemeType};
+use namada_sdk::masp::TransferSource;
+use namada_sdk::masp::TransferTarget;
+use namada_sdk::token::Amount;
+use namada_sdk::uint::Uint;
 use namada_sdk::io::NullIo;
 use namada_sdk::masp::fs::FsShieldedUtils;
 use namada_sdk::rpc;
@@ -33,6 +33,8 @@ use namada_sdk::wallet::fs::FsWalletUtils;
 use namada_sdk::Namada;
 use namada_sdk::NamadaImpl;
 use namada_sdk::zeroize::Zeroizing;
+
+use namada_sdk::proof_of_stake;
 
 const MNEMONIC_CODE: &str = "cruise ball fame lucky fabric govern \
                             length fruit permit tonight fame pear \
@@ -69,9 +71,11 @@ struct Account {
     pub revealed: bool,
 }
 
+
 // Generate the given number of accounts and load each up with a preset number
 // of native tokens from the faucet
 async fn gen_accounts(namada: &mut impl Namada, size: usize) -> Vec<Account> {
+    let signing_key = SecretKey::from_str(FAUCET_KEY).unwrap();
     let mut accounts: Vec<Account> = vec![];
     let mnemonic = Mnemonic::from_phrase(MNEMONIC_CODE, namada_sdk::bip39::Language::English)
         .expect("unable to construct mnemonic");
@@ -85,12 +89,13 @@ async fn gen_accounts(namada: &mut impl Namada, size: usize) -> Vec<Account> {
         let (_key_alias, sk) = namada
             .wallet_mut()
             .await
-            .derive_key_from_mnemonic_code(
+            .derive_store_key_from_mnemonic_code(
                 SchemeType::Ed25519,
                 Some(alias),
                 false,
                 derivation_path,
                 Some((mnemonic.clone(), Zeroizing::new("".to_owned()))),
+                false,
                 None,
             )
             .expect("unable to derive key from mnemonic code");
@@ -129,6 +134,7 @@ async fn update_token_balances(namada: &impl Namada, accounts: &mut Vec<Account>
     }
 }
 
+
 // Submit transactions to reveal the public key of each account
 async fn reveal_pks(namada: &mut impl Namada, accounts: &mut [Account]) {
     let mut reveal_builders = Vec::new();
@@ -138,7 +144,7 @@ async fn reveal_pks(namada: &mut impl Namada, accounts: &mut [Account]) {
         let reveal_tx_builder = namada
             .new_reveal_pk(account.public_key.clone())
             .signing_keys(vec![account.public_key.clone()]);
-        let (mut reveal_tx, signing_data, _) = reveal_tx_builder
+        let (mut reveal_tx, signing_data) = reveal_tx_builder
             .build(namada)
             .await
             .expect("unable to build reveal pk tx");
@@ -165,7 +171,7 @@ async fn get_funds_from_faucet(
     account: &Account,
 ) -> std::result::Result<ProcessTxResponse, namada_sdk::error::Error> {
     let faucet_sk = common::SecretKey::from_str(FAUCET_KEY).unwrap();
-    let faucet_pk = faucet_sk.ref_to();
+    let faucet_pk = faucet_sk.to_public();
     let faucet = Address::from_str(FAUCET).unwrap();
 
     let mut transfer_tx_builder = namada
@@ -263,7 +269,7 @@ async fn main() -> std::io::Result<()> {
     let http_client = HttpClient::new(tendermint_addr).unwrap();
     let _ = fs::remove_file("wallet.toml").await;
     // Setup wallet storage
-    let wallet = FsWalletUtils::new(PathBuf::from("wallet.toml"));
+    let wallet: namada_sdk::wallet::Wallet<FsWalletUtils> = FsWalletUtils::new(PathBuf::from("wallet.toml"));
     // Setup shielded context storage
     let shielded_ctx = FsShieldedUtils::new(Path::new("masp/").to_path_buf());
     // Setup the Namada context
